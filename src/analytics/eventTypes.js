@@ -1,0 +1,58 @@
+/** Central allow-list for analytics events (ingest + rollups + dashboards). */
+export const ANALYTICS_EVENT_TYPES = [
+  'PROFILE_VIEW',
+  'PROFILE_CARD_CLICK',
+  'PAGE_VISIT',
+  'SECTION_VIEW',
+  'WHATSAPP_CLICK',
+  'CALL_CLICK',
+  'WEBSITE_CLICK',
+  'SAVE_BUSINESS',
+  'SHARE_CLICK',
+  'DIRECTION_CLICK',
+  'BOOKING_CLICK',
+  'QR_SCAN',
+  'NFC_TAP',
+  'REVIEW_ADDED',
+  'REVIEW_VIEW',
+  'SEARCH_APPEARANCE',
+  'SEARCH_CLICK',
+  'LOGIN',
+  'SIGNUP',
+  'SUBSCRIPTION_PURCHASE',
+  'PAYMENT_SUCCESS',
+  'PAYMENT_FAILED',
+]
+
+export const EVENT_CATEGORIES = {
+  PROFILE_VIEW: 'profile',
+  PROFILE_CARD_CLICK: 'profile',
+  PAGE_VISIT: 'navigation',
+  SECTION_VIEW: 'engagement',
+  WHATSAPP_CLICK: 'conversion',
+  CALL_CLICK: 'conversion',
+  WEBSITE_CLICK: 'conversion',
+  SAVE_BUSINESS: 'conversion',
+  SHARE_CLICK: 'engagement',
+  DIRECTION_CLICK: 'conversion',
+  BOOKING_CLICK: 'conversion',
+  QR_SCAN: 'attribution',
+  NFC_TAP: 'attribution',
+  REVIEW_ADDED: 'reviews',
+  REVIEW_VIEW: 'reviews',
+  SEARCH_APPEARANCE: 'search',
+  SEARCH_CLICK: 'search',
+  LOGIN: 'account',
+  SIGNUP: 'account',
+  SUBSCRIPTION_PURCHASE: 'commerce',
+  PAYMENT_SUCCESS: 'commerce',
+  PAYMENT_FAILED: 'commerce',
+}
+
+/** Legacy server `trackEvent` type → typed analytics event co-emitted to `analytics_events`. */
+export const LEGACY_TRACK_MAP = {
+  view: 'PROFILE_VIEW',
+  click: 'PROFILE_CARD_CLICK',
+  enquiry: 'REVIEW_ADDED',
+  save: 'SAVE_BUSINESS',
+}
