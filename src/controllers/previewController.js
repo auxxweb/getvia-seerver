@@ -1,9 +1,9 @@
 import { Business } from '../models/Business.js'
 import { BusinessContent } from '../models/BusinessContent.js'
 import { Review } from '../models/Review.js'
-import { User } from '../models/User.js'
 import { HttpError } from '../middleware/errorHandler.js'
 import { signAccessToken, verifyAccessToken } from '../utils/tokens.js'
+import { getApiOrigin, prepareBusinessMediaForResponse } from '../services/legacyImageUrls.service.js'
 
 function jwtSecret() {
   return process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET
@@ -70,33 +70,40 @@ export async function getBusinessPreviewByToken(req, res, next) {
         .lean(),
     ])
 
-    // mimic public detail payload shape used by frontend templates
+    const media = await prepareBusinessMediaForResponse(
+      business._id,
+      { business, content },
+      getApiOrigin(req),
+    )
+    const biz = media.business || business
+    const resolvedContent = media.content
+
     res.json({
       ok: true,
       business: {
-        profileId: business.publicId,
-        id: business._id.toString(),
-        name: business.name,
-        category: business.category,
-        subcategory: business.subcategory,
-        logo: business.logo,
-        address: business.address,
-        isVerified: business.isVerified,
-        isFeatured: business.isFeatured,
-        plan: business.plan,
-        ratingAvg: business.ratingAvg,
-        reviewCount: business.reviewCount,
-        location: business.location,
-        phone: business.phone,
-        whatsappHref: business.whatsappHref,
-        description: business.description,
-        openingHours: business.openingHours,
-        socialLinks: business.socialLinks,
-        themeSettings: business.themeSettings,
-        contactName: business.contactName,
-        contactEmail: business.contactEmail,
-        onboardingCompletedAt: business.onboardingCompletedAt,
-        content: content || null,
+        profileId: biz.publicId,
+        id: biz._id.toString(),
+        name: biz.name,
+        category: biz.category,
+        subcategory: biz.subcategory,
+        logo: biz.logo,
+        address: biz.address,
+        isVerified: biz.isVerified,
+        isFeatured: biz.isFeatured,
+        plan: biz.plan,
+        ratingAvg: biz.ratingAvg,
+        reviewCount: biz.reviewCount,
+        location: biz.location,
+        phone: biz.phone,
+        whatsappHref: biz.whatsappHref,
+        description: biz.description,
+        openingHours: biz.openingHours,
+        socialLinks: biz.socialLinks,
+        themeSettings: biz.themeSettings,
+        contactName: biz.contactName,
+        contactEmail: biz.contactEmail,
+        onboardingCompletedAt: biz.onboardingCompletedAt,
+        content: resolvedContent || null,
         reviews: (reviews || []).map(serializeReview),
       },
     })
@@ -104,4 +111,3 @@ export async function getBusinessPreviewByToken(req, res, next) {
     next(e)
   }
 }
-

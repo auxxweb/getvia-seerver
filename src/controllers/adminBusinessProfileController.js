@@ -2,13 +2,7 @@ import { Business } from '../models/Business.js'
 import { User } from '../models/User.js'
 import { HttpError } from '../middleware/errorHandler.js'
 import { signAccessToken } from '../utils/tokens.js'
-import {
-  applyBusinessContentUpdate,
-  applyBusinessUpdate,
-  completeBusinessOnboarding,
-  createBusinessForOwner,
-  getBusinessDetailBundle,
-} from '../services/businessProfileMutations.js'
+import { getApiOrigin } from '../services/legacyImageUrls.service.js'
 import { sanitizeBusinessGeoFields } from '../services/businessGeoSanitize.js'
 import { validateCustomThemePatch } from '../services/theme.service.js'
 import { uploadMediaDataUrl } from './businessOwnerController.js'
@@ -219,7 +213,7 @@ export async function getBusinessProfileDetail(req, res, next) {
     sanitizeBusinessGeoFields(businessDoc)
     if (businessDoc.isModified()) await businessDoc.save()
 
-    const bundle = await getBusinessDetailBundle(req.params.id)
+    const bundle = await getBusinessDetailBundle(req.params.id, { apiOrigin: getApiOrigin(req) })
     res.json({ ok: true, ...bundle })
   } catch (e) {
     next(e)

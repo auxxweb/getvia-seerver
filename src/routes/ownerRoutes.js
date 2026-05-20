@@ -6,6 +6,7 @@ import * as ai from '../controllers/aiController.js'
 import * as preview from '../controllers/previewController.js'
 import * as theme from '../controllers/themeController.js'
 import * as analyticsDash from '../controllers/analyticsDashboard.controller.js'
+import * as planUsage from '../controllers/planUsageController.js'
 
 const r = Router()
 r.use(authenticate(true))
@@ -32,6 +33,8 @@ r.put('/business/:id/content', owner.updateBusinessContent)
 r.get('/business/:id/analytics', owner.businessAnalytics)
 r.get('/business/:id/analytics/dashboard', analyticsDash.businessAnalyticsDashboard)
 r.get('/business/:id/analytics/export', analyticsDash.exportBusinessAnalytics)
+r.get('/business/:id/plan-usage', planUsage.getBusinessPlanUsage)
+r.get('/business/:id/analytics/insights', planUsage.getBusinessAnalyticsInsights)
 
 r.post('/ai/generate', ai.aiGenerate)
 

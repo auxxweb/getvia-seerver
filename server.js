@@ -2,18 +2,27 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import './bootstrap-env.js'
+import { validateEnv } from './src/config/validateEnv.js'
 import { connectDb } from './config/db.js'
 import { createApp } from './app.js'
 import { startAnalyticsCronJobs } from './src/jobs/analyticsCron.js'
 import { isFirebaseAdminConfigured } from './config/firebase.js'
 
+validateEnv()
+
 const thisServerDir = path.dirname(fileURLToPath(import.meta.url))
 
 const port = Number(process.env.PORT) || 5000
+const isProd = process.env.NODE_ENV === 'production'
 const uri =
   process.env.MONGO_URI?.trim() ||
   process.env.MONGODB_URI?.trim() ||
-  'mongodb://127.0.0.1:27017/getvia'
+  (isProd ? '' : 'mongodb://127.0.0.1:27017/getvia')
+
+if (!uri) {
+  console.error('[database] MONGO_URI is required in production.')
+  process.exit(1)
+}
 
 function maskMongoUri(u) {
   try {
@@ -47,21 +56,20 @@ try {
 const app = createApp()
 app.listen(port, () => {
   startAnalyticsCronJobs()
-  const rel = process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim()
-  const saAbs = rel
-    ? path.isAbsolute(rel)
-      ? rel
-      : path.join(thisServerDir, rel.replace(/^\.\//, ''))
-    : path.join(thisServerDir, 'secrets', 'firebase-adminsdk.json')
   console.log(`API listening on http://localhost:${port}`)
-  console.log(`[getvia-api] This process directory: ${thisServerDir}`)
-  console.log(`[getvia-api] Service account JSON: ${saAbs} (exists: ${existsSync(saAbs)})`)
-  console.log(
-    isFirebaseAdminConfigured()
-      ? 'Firebase Admin: ready (service account or FIREBASE_* env).'
-      : 'Firebase Admin: NOT configured — add server/secrets/firebase-adminsdk.json and restart.',
-  )
-  console.log(
-    `[getvia-api] Verify the browser hits THIS process: http://localhost:${port}/api/auth/_diagnostics (must show apiBuild getvia-api-v3).`,
-  )
+  if (!isProd) {
+    const rel = process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim()
+    const saAbs = rel
+      ? path.isAbsolute(rel)
+        ? rel
+        : path.join(thisServerDir, rel.replace(/^\.\//, ''))
+      : path.join(thisServerDir, 'secrets', 'firebase-adminsdk.json')
+    console.log(`[getvia-api] This process directory: ${thisServerDir}`)
+    console.log(`[getvia-api] Service account JSON: ${saAbs} (exists: ${existsSync(saAbs)})`)
+    console.log(
+      isFirebaseAdminConfigured()
+        ? 'Firebase Admin: ready (service account or FIREBASE_* env).'
+        : 'Firebase Admin: NOT configured — add server/secrets/firebase-adminsdk.json and restart.',
+    )
+  }
 })

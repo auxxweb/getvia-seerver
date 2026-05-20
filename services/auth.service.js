@@ -113,3 +113,64 @@ export async function findOrCreateUserFromFirebase(decoded, options = {}) {
   if (debug()) console.log('[auth.service] Created user', user._id.toString())
   return { user, created: true }
 }
+
+/**
+ * Sign-in only: resolve an existing user from Firebase — never create.
+ * @param {import('firebase-admin/auth').DecodedIdToken} decoded
+ * @param {{ expectedRole?: string }} [options]
+ */
+export async function loginUserFromFirebase(decoded, options = {}) {
+  const expectedRole = options.expectedRole ? String(options.expectedRole).trim() : ''
+  const uid = decoded.uid
+  const phone = decoded.phone_number ? String(decoded.phone_number) : ''
+  const emailFromToken = decoded.email ? String(decoded.email).toLowerCase().trim() : ''
+  const email = emailFromToken || `${uid}@firebase.getvia.app`
+  const displayName =
+    (decoded.name && String(decoded.name).trim()) ||
+    (emailFromToken ? emailFromToken.split('@')[0] : '') ||
+    (phone ? `User ${phone.slice(-4)}` : '')
+  const name = displayName || 'User'
+  const picture = decoded.picture ? String(decoded.picture).trim() : ''
+
+  let user = await User.findOne({ firebaseUid: uid })
+  if (!user && emailFromToken) {
+    user = await User.findOne({ email: emailFromToken })
+  }
+
+  if (!user) {
+    const err = new Error('USER_NOT_FOUND')
+    err.code = 'USER_NOT_FOUND'
+    err.status = 404
+    throw err
+  }
+
+  if (user.role === 'SUPER_ADMIN') {
+    const err = new Error('NON_USER_ROLE')
+    err.code = 'NON_USER_ROLE'
+    err.status = 403
+    throw err
+  }
+
+  if (expectedRole && user.role !== expectedRole) {
+    const err = new Error('ROLE_MISMATCH')
+    err.code = 'ROLE_MISMATCH'
+    err.status = 403
+    throw err
+  }
+
+  if (user.firebaseUid && user.firebaseUid !== uid) {
+    const err = new Error('FIREBASE_UID_MISMATCH')
+    err.code = 'FIREBASE_UID_MISMATCH'
+    err.status = 409
+    throw err
+  }
+
+  user.firebaseUid = uid
+  user.name = name || user.name
+  if (phone) user.phone = phone
+  if (emailFromToken) user.email = emailFromToken
+  if (picture) user.photoURL = picture
+  await user.save()
+  if (debug()) console.log('[auth.service] Login-only Firebase OK', user._id.toString(), user.role)
+  return { user, created: false }
+}

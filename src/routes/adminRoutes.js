@@ -70,5 +70,6 @@ r.patch('/businesses/:id/flags', admin.setBusinessFlags)
 r.patch('/businesses/:id/owner-block', admin.setBusinessOwnerBlocked)
 r.get('/businesses/:id/content', admin.getBusinessContentAdmin)
 r.patch('/businesses/:id/content', admin.patchBusinessContentAdmin)
+r.patch('/businesses/:id/plan', plans.assignPlanToBusinessAdmin)
 
 export default r

@@ -198,14 +198,27 @@ export async function firebaseLogin(req, res, next) {
     }
 
     const registerAsBusinessOwner = Boolean(req.body?.registerAsBusinessOwner)
+    const loginOnly = Boolean(req.body?.loginOnly)
+    const expectedRole = req.body?.expectedRole ? String(req.body.expectedRole).trim() : ''
 
     let user
     try {
-      const result = await authService.findOrCreateUserFromFirebase(decoded, {
-        registerAsBusinessOwner,
-      })
+      const result = loginOnly
+        ? await authService.loginUserFromFirebase(decoded, { expectedRole })
+        : await authService.findOrCreateUserFromFirebase(decoded, {
+            registerAsBusinessOwner,
+          })
       user = result.user
     } catch (e) {
+      if (e?.code === 'USER_NOT_FOUND') {
+        throw new HttpError(404, 'No account found for these credentials. Register your business first.')
+      }
+      if (e?.code === 'ROLE_MISMATCH') {
+        throw new HttpError(
+          403,
+          'This sign-in is not a business owner account. Complete business registration on the public site.',
+        )
+      }
       if (e?.code === 'NON_USER_ROLE') {
         throw new HttpError(403, 'This account is not an end-user account. Use the business or admin portal.')
       }

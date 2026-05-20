@@ -7,6 +7,10 @@ import { User } from '../models/User.js'
 import { OfferAdBanner } from '../models/OfferAdBanner.js'
 import { HttpError } from '../middleware/errorHandler.js'
 import { trackEvent } from '../services/analytics.service.js'
+import {
+  getApiOrigin,
+  prepareBusinessMediaForResponse,
+} from '../services/legacyImageUrls.service.js'
 
 function parseFiniteNumber(value) {
   const n = typeof value === 'number' ? value : Number(String(value))
@@ -137,7 +141,7 @@ export async function searchBusinesses(req, res, next) {
         })
       }
     } else if (category) {
-      extraClauses.push({ category: new RegExp(String(category), 'i') })
+      extraClauses.push({ category: new RegExp(escapeRegex(String(category)), 'i') })
     }
     if (subcategory) {
       extraClauses.push({
@@ -199,7 +203,14 @@ export async function getBusinessById(req, res, next) {
 
     if (!b) throw new HttpError(404, 'Business not found')
 
-    const content = await BusinessContent.findOne({ businessId: b._id }).lean()
+    let content = await BusinessContent.findOne({ businessId: b._id }).lean()
+    const media = await prepareBusinessMediaForResponse(
+      b._id,
+      { business: b, content },
+      getApiOrigin(req),
+    )
+    b = media.business || b
+    content = media.content
     const reviews = await Review.find({ businessId: b._id })
       .populate('userId', 'name')
       .sort({ createdAt: -1 })

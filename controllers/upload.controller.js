@@ -23,6 +23,20 @@ function allowedFolderForRole(role, folder) {
   return false
 }
 
+function folderFromPublicId(publicId) {
+  const id = String(publicId || '').trim()
+  if (!id || id.includes('..')) return null
+  return id.split('/')[0] || null
+}
+
+function assertPublicIdAllowed(role, publicId) {
+  const folder = folderFromPublicId(publicId)
+  if (!folder) throw new HttpError(400, 'Invalid publicId')
+  if (!allowedFolderForRole(role, folder)) {
+    throw new HttpError(403, 'Not allowed to access this asset')
+  }
+}
+
 /**
  * POST /api/upload/image
  * multipart: file, folder; optional: replacePublicId (delete after successful upload)
@@ -51,6 +65,7 @@ export async function uploadImageHandler(req, res, next) {
     const uploaded = await uploadImage(req.file.buffer, folder)
 
     if (replacePublicId && replacePublicId !== uploaded.public_id) {
+      assertPublicIdAllowed(req.user.role, replacePublicId)
       try {
         await deleteImage(replacePublicId)
       } catch {
@@ -83,6 +98,7 @@ export async function getDeliveryUrlHandler(req, res, next) {
     if (!publicId) {
       throw new HttpError(400, 'publicId is required')
     }
+    assertPublicIdAllowed(req.user.role, publicId)
     const urls = buildImageVariantUrls(publicId)
     const url = urls.full || urls.medium || urls.thumbnail || ''
     if (!url) {
@@ -106,6 +122,7 @@ export async function deleteImageHandler(req, res, next) {
     if (!publicId) {
       throw new HttpError(400, 'publicId is required')
     }
+    assertPublicIdAllowed(req.user.role, publicId)
     await deleteImage(publicId)
     res.json({ ok: true })
   } catch (e) {

@@ -42,6 +42,130 @@ export function normalizeMapLocation(raw) {
   }
 }
 
+function countWords(text) {
+  const t = String(text || '').trim()
+  if (!t) return 0
+  return t.split(/\s+/).length
+}
+
+const LANDING_WORD_LIMITS = {
+  bannerTitle: 8,
+  bannerDescription: 50,
+  welcomeTitle: 8,
+  welcomeDescription: 50,
+}
+
+function validateLandingSectionPatch(patch) {
+  if (!patch || typeof patch !== 'object') return
+  for (const [key, max] of Object.entries(LANDING_WORD_LIMITS)) {
+    if (patch[key] === undefined) continue
+    const val = String(patch[key] || '').trim()
+    if (!val) continue
+    if (countWords(val) > max) {
+      throw new HttpError(400, `${key} must be ${max} words or fewer`)
+    }
+  }
+}
+
+const OFFERS_PAGE_WORD_LIMITS = {
+  offersPageTitle: 8,
+  offersPageDescription: 50,
+}
+
+function validateOffersContentPatch(patch) {
+  if (!patch || typeof patch !== 'object') return
+  for (const [key, max] of Object.entries(OFFERS_PAGE_WORD_LIMITS)) {
+    if (patch[key] === undefined) continue
+    const val = String(patch[key] || '').trim()
+    if (!val) continue
+    if (countWords(val) > max) {
+      throw new HttpError(400, `${key} must be ${max} words or fewer`)
+    }
+  }
+  if (!Array.isArray(patch.offers)) return
+  for (const offer of patch.offers) {
+    if (!offer || typeof offer !== 'object') continue
+    if (offer.title !== undefined) {
+      const val = String(offer.title || '').trim()
+      if (val && countWords(val) > 8) {
+        throw new HttpError(400, 'offer title must be 8 words or fewer')
+      }
+    }
+    if (offer.description !== undefined) {
+      const val = String(offer.description || '').trim()
+      if (val && countWords(val) > 50) {
+        throw new HttpError(400, 'offer description must be 50 words or fewer')
+      }
+    }
+  }
+}
+
+const CORE_PAGE_WORD_LIMITS = {
+  corePageTitle: 8,
+  corePageDescription: 50,
+}
+
+function validateCoreContentPatch(patch) {
+  if (!patch || typeof patch !== 'object') return
+  for (const [key, max] of Object.entries(CORE_PAGE_WORD_LIMITS)) {
+    if (patch[key] === undefined) continue
+    const val = String(patch[key] || '').trim()
+    if (!val) continue
+    if (countWords(val) > max) {
+      throw new HttpError(400, `${key} must be ${max} words or fewer`)
+    }
+  }
+  if (!Array.isArray(patch.coreServices)) return
+  for (const service of patch.coreServices) {
+    if (!service || typeof service !== 'object') continue
+    if (service.title !== undefined) {
+      const val = String(service.title || '').trim()
+      if (val && countWords(val) > 8) {
+        throw new HttpError(400, 'core service title must be 8 words or fewer')
+      }
+    }
+    if (service.description !== undefined) {
+      const val = String(service.description || '').trim()
+      if (val && countWords(val) > 50) {
+        throw new HttpError(400, 'core service description must be 50 words or fewer')
+      }
+    }
+  }
+}
+
+const PRODUCTS_PAGE_WORD_LIMITS = {
+  productsPageTitle: 8,
+  productsPageDescription: 50,
+}
+
+function validateProductsContentPatch(patch) {
+  if (!patch || typeof patch !== 'object') return
+  for (const [key, max] of Object.entries(PRODUCTS_PAGE_WORD_LIMITS)) {
+    if (patch[key] === undefined) continue
+    const val = String(patch[key] || '').trim()
+    if (!val) continue
+    if (countWords(val) > max) {
+      throw new HttpError(400, `${key} must be ${max} words or fewer`)
+    }
+  }
+  if (!Array.isArray(patch.catalogue)) return
+  for (const item of patch.catalogue) {
+    if (!item || typeof item !== 'object') continue
+    if (item.name !== undefined) {
+      const val = String(item.name || '').trim()
+      if (val && countWords(val) > 8) {
+        throw new HttpError(400, 'catalogue item title must be 8 words or fewer')
+      }
+    }
+    if (item.description !== undefined) {
+      const val = String(item.description || '').trim()
+      if (val && countWords(val) > 50) {
+        throw new HttpError(400, 'catalogue item description must be 50 words or fewer')
+      }
+    }
+  }
+}
+
 const BUSINESS_UPDATE_KEYS = [
   'name',
   'logo',
@@ -71,6 +195,13 @@ const BUSINESS_UPDATE_KEYS = [
 ]
 
 export async function applyBusinessUpdate(business, body) {
+  if (body.description !== undefined) {
+    const description = String(body.description || '').trim()
+    if (description && countWords(description) > 50) {
+      throw new HttpError(400, 'description must be 50 words or fewer')
+    }
+  }
+
   const prevLogoId = business.logoPublicId
   for (const k of BUSINESS_UPDATE_KEYS) {
     if (body[k] === undefined) continue
@@ -185,11 +316,16 @@ export async function createBusinessForOwner(ownerId, body = {}) {
   return business
 }
 
-export async function getBusinessDetailBundle(businessId) {
+export async function getBusinessDetailBundle(businessId, options = {}) {
   const business = await Business.findById(businessId).populate('planId').lean()
   if (!business) throw new HttpError(404, 'Business not found')
   const content = await BusinessContent.findOne({ businessId }).lean()
-  return { business, content: content || null }
+  const { prepareBusinessMediaForResponse } = await import('./legacyImageUrls.service.js')
+  return prepareBusinessMediaForResponse(
+    businessId,
+    { business, content: content || null },
+    options.apiOrigin,
+  )
 }
 
 export async function applyBusinessContentUpdate(businessId, patch) {
@@ -206,6 +342,12 @@ export async function applyBusinessContentUpdate(businessId, patch) {
     const plain = cur && typeof cur.toObject === 'function' ? cur.toObject() : cur || {}
     content.set(key, { ...plain, ...patch[key] })
   }
+  if (patch.landingSection !== undefined) {
+    validateLandingSectionPatch(patch.landingSection)
+  }
+  validateOffersContentPatch(patch)
+  validateCoreContentPatch(patch)
+  validateProductsContentPatch(patch)
   mergeObj('landingSection')
   mergeObj('welcomeSection')
   if (patch.offers !== undefined) content.offers = patch.offers

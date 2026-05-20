@@ -15,6 +15,12 @@ import {
   createBusinessForOwner,
   getBusinessDetailBundle,
 } from '../services/businessProfileMutations.js'
+import {
+  assertGalleryWithinPlan,
+  assertAndConsumeOfferPosts,
+  assertTemplateAllowed,
+} from '../services/planEntitlements.service.js'
+import { getApiOrigin } from '../services/legacyImageUrls.service.js'
 
 export async function uploadMediaDataUrl(req, res, next) {
   try {
@@ -72,6 +78,10 @@ export async function updateBusiness(req, res, next) {
     if (business.ownerId.toString() !== req.user._id.toString()) {
       throw new HttpError(403, 'Not your business')
     }
+    const nextTemplate = req.body?.themeSettings?.template
+    if (nextTemplate) {
+      await assertTemplateAllowed(id, nextTemplate)
+    }
     await applyBusinessUpdate(business, req.body)
     res.json({ ok: true, business })
   } catch (e) {
@@ -91,7 +101,7 @@ export async function myBusinesses(req, res, next) {
 export async function getOwnerBusinessDetail(req, res, next) {
   try {
     const { id } = req.params
-    const bundle = await getBusinessDetailBundle(id)
+    const bundle = await getBusinessDetailBundle(id, { apiOrigin: getApiOrigin(req) })
     if (bundle.business.ownerId.toString() !== req.user._id.toString()) {
       throw new HttpError(403, 'Not your business')
     }
@@ -124,6 +134,18 @@ export async function updateBusinessContent(req, res, next) {
     if (business.ownerId.toString() !== req.user._id.toString()) {
       throw new HttpError(403, 'Not your business')
     }
+
+    const { BusinessContent } = await import('../models/BusinessContent.js')
+    const existing = await BusinessContent.findOne({ businessId: id }).lean()
+    const prevOfferCount = (existing?.offers || []).length
+
+    if (req.body?.gallery !== undefined) {
+      await assertGalleryWithinPlan(id, req.body.gallery)
+    }
+    if (req.body?.offers !== undefined) {
+      await assertAndConsumeOfferPosts(id, prevOfferCount, (req.body.offers || []).length)
+    }
+
     const content = await applyBusinessContentUpdate(id, req.body)
     res.json({ ok: true, content })
   } catch (e) {
