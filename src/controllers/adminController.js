@@ -6,7 +6,77 @@ import { User } from '../models/User.js'
 import { Analytics } from '../models/Analytics.js'
 import { PaymentHistory } from '../models/PaymentHistory.js'
 import { HttpError } from '../middleware/errorHandler.js'
-import { deleteImage, isCloudinaryConfigured } from '../../services/cloudinary.service.js'
+import {
+  buildImageVariantUrls,
+  isCloudinaryConfigured,
+} from '../../services/cloudinary.service.js'
+import {
+  collectCategoryPublicIds,
+  collectEventPublicIds,
+  destroyCloudinaryPublicIds,
+  publicIdsToDelete,
+} from '../../services/cloudinaryCleanup.service.js'
+import { applyBusinessContentUpdate } from '../services/businessProfileMutations.js'
+
+function isHttpImageUrl(u) {
+  return typeof u === 'string' && /^https?:\/\//i.test(u.trim())
+}
+
+/** Prefer stored CDN URL; fall back to Cloudinary delivery URL from public_id. */
+function resolveStoredImageUrl(url, publicId) {
+  const raw = typeof url === 'string' ? url.trim() : ''
+  if (isHttpImageUrl(raw)) return raw
+  const pid = typeof publicId === 'string' ? publicId.trim() : ''
+  if (pid && isCloudinaryConfigured()) {
+    const variants = buildImageVariantUrls(pid)
+    return variants.full || variants.medium || ''
+  }
+  return raw
+}
+
+function normalizeSubcategoryForAdmin(raw) {
+  if (typeof raw === 'string') {
+    const title = raw.trim()
+    return {
+      title,
+      description: '',
+      logoUrl: '',
+      coverImageUrl: '',
+      logoPublicId: '',
+      coverImagePublicId: '',
+    }
+  }
+  const s = raw && typeof raw === 'object' ? raw : {}
+  return {
+    title: String(s.title || s.name || '').trim(),
+    description: s.description || '',
+    logoUrl: s.logoUrl || s.logo || s.image || '',
+    coverImageUrl: s.coverImageUrl || s.cover || s.coverImage || '',
+    logoPublicId: s.logoPublicId || '',
+    coverImagePublicId: s.coverImagePublicId || '',
+  }
+}
+
+function enrichCategoryForAdmin(doc) {
+  const c = doc && typeof doc.toObject === 'function' ? doc.toObject() : { ...doc }
+  const iconResolved = resolveStoredImageUrl(c.icon, c.iconPublicId)
+  const icon =
+    isHttpImageUrl(iconResolved) || iconResolved.startsWith('//') ? iconResolved : c.icon || ''
+  return {
+    ...c,
+    icon,
+    logoUrl: resolveStoredImageUrl(c.logoUrl, c.logoPublicId),
+    coverImageUrl: resolveStoredImageUrl(c.coverImageUrl, c.coverImagePublicId),
+    subcategories: (c.subcategories || []).map((raw) => {
+      const s = normalizeSubcategoryForAdmin(raw)
+      return {
+        ...s,
+        logoUrl: resolveStoredImageUrl(s.logoUrl, s.logoPublicId),
+        coverImageUrl: resolveStoredImageUrl(s.coverImageUrl, s.coverImagePublicId),
+      }
+    }),
+  }
+}
 
 function normalizeSubcategoriesInput(raw) {
   if (!Array.isArray(raw)) return []
@@ -29,45 +99,26 @@ function normalizeSubcategoriesInput(raw) {
       return {
         title,
         description: s.description || '',
-        logoUrl: s.logoUrl || '',
+        logoUrl: '',
         coverImageUrl: s.coverImageUrl || '',
-        logoPublicId: s.logoPublicId || '',
+        logoPublicId: '',
         coverImagePublicId: s.coverImagePublicId || '',
       }
     })
     .filter(Boolean)
 }
 
-function collectCategoryPublicIds(doc) {
-  if (!doc) return []
-  const ids = []
-  if (doc.iconPublicId) ids.push(doc.iconPublicId)
-  if (doc.logoPublicId) ids.push(doc.logoPublicId)
-  if (doc.coverImagePublicId) ids.push(doc.coverImagePublicId)
-  for (const s of doc.subcategories || []) {
-    if (s && typeof s === 'object') {
-      if (s.logoPublicId) ids.push(s.logoPublicId)
-      if (s.coverImagePublicId) ids.push(s.coverImagePublicId)
-    }
-  }
-  return [...new Set(ids.filter(Boolean))]
-}
-
-async function destroyCloudinaryIds(ids) {
-  if (!isCloudinaryConfigured() || !ids.length) return
-  await Promise.all(ids.map((id) => deleteImage(id).catch(() => {})))
-}
-
 function normalizeCategoryPayload(body) {
   return {
     name: String(body.name || '').trim(),
     description: body.description || '',
-    icon: body.icon || '',
-    iconPublicId: body.iconPublicId || '',
-    logoUrl: body.logoUrl || '',
-    logoPublicId: body.logoPublicId || '',
+    icon: '',
+    iconPublicId: '',
+    logoUrl: '',
+    logoPublicId: '',
     coverImageUrl: body.coverImageUrl || '',
     coverImagePublicId: body.coverImagePublicId || '',
+    showInDailyNeeds: Boolean(body.showInDailyNeeds),
     subcategories: normalizeSubcategoriesInput(body.subcategories),
   }
 }
@@ -99,7 +150,8 @@ export async function platformAnalytics(req, res, next) {
 
 export async function listCategories(req, res, next) {
   try {
-    const items = await Category.find().sort({ name: 1 }).lean()
+    const rows = await Category.find().sort({ name: 1 }).lean()
+    const items = rows.map(enrichCategoryForAdmin)
     res.json({ ok: true, items })
   } catch (e) {
     next(e)
@@ -111,7 +163,7 @@ export async function createCategory(req, res, next) {
     const payload = normalizeCategoryPayload(req.body)
     if (!payload.name) throw new HttpError(400, 'Category name is required')
     const c = await Category.create(payload)
-    res.status(201).json({ ok: true, category: c })
+    res.status(201).json({ ok: true, category: enrichCategoryForAdmin(c) })
   } catch (e) {
     next(e)
   }
@@ -121,30 +173,14 @@ export async function updateCategory(req, res, next) {
   try {
     const existing = await Category.findById(req.params.id)
     if (!existing) throw new HttpError(404, 'Category not found')
-    const merged = {
-      name: req.body.name !== undefined ? String(req.body.name).trim() : existing.name,
-      description: req.body.description !== undefined ? req.body.description : existing.description,
-      icon: req.body.icon !== undefined ? req.body.icon : existing.icon,
-      iconPublicId:
-        req.body.iconPublicId !== undefined ? req.body.iconPublicId : existing.iconPublicId,
-      logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existing.logoUrl,
-      logoPublicId:
-        req.body.logoPublicId !== undefined ? req.body.logoPublicId : existing.logoPublicId,
-      coverImageUrl:
-        req.body.coverImageUrl !== undefined ? req.body.coverImageUrl : existing.coverImageUrl,
-      coverImagePublicId:
-        req.body.coverImagePublicId !== undefined
-          ? req.body.coverImagePublicId
-          : existing.coverImagePublicId,
-      subcategories:
-        req.body.subcategories !== undefined
-          ? normalizeSubcategoriesInput(req.body.subcategories)
-          : existing.subcategories,
-    }
-    if (!merged.name) throw new HttpError(400, 'Category name is required')
-    existing.set(merged)
+    const beforeIds = collectCategoryPublicIds(existing.toObject())
+    const payload = normalizeCategoryPayload(req.body)
+    if (!payload.name) throw new HttpError(400, 'Category name is required')
+    existing.set(payload)
     await existing.save()
-    res.json({ ok: true, category: existing })
+    const afterIds = collectCategoryPublicIds(existing.toObject())
+    await destroyCloudinaryPublicIds(publicIdsToDelete(beforeIds, afterIds))
+    res.json({ ok: true, category: enrichCategoryForAdmin(existing) })
   } catch (e) {
     next(e)
   }
@@ -152,8 +188,11 @@ export async function updateCategory(req, res, next) {
 
 export async function deleteCategory(req, res, next) {
   try {
-    const c = await Category.findByIdAndDelete(req.params.id)
+    const c = await Category.findById(req.params.id).lean()
     if (!c) throw new HttpError(404, 'Category not found')
+    const imageIds = collectCategoryPublicIds(c)
+    await Category.deleteOne({ _id: req.params.id })
+    await destroyCloudinaryPublicIds(imageIds)
     res.json({ ok: true })
   } catch (e) {
     next(e)
@@ -180,8 +219,12 @@ export async function createEvent(req, res, next) {
 
 export async function updateEvent(req, res, next) {
   try {
+    const existing = await Event.findById(req.params.id).lean()
+    if (!existing) throw new HttpError(404, 'Event not found')
     const ev = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true })
-    if (!ev) throw new HttpError(404, 'Event not found')
+    await destroyCloudinaryPublicIds(
+      publicIdsToDelete(collectEventPublicIds(existing), collectEventPublicIds(ev)),
+    )
     res.json({ ok: true, event: ev })
   } catch (e) {
     next(e)
@@ -193,7 +236,7 @@ export async function deleteEvent(req, res, next) {
     const ev = await Event.findById(req.params.id).lean()
     if (!ev) throw new HttpError(404, 'Event not found')
     await Event.deleteOne({ _id: req.params.id })
-    if (ev.bannerPublicId) await destroyCloudinaryIds([ev.bannerPublicId])
+    await destroyCloudinaryPublicIds(collectEventPublicIds(ev))
     res.json({ ok: true })
   } catch (e) {
     next(e)
@@ -313,17 +356,7 @@ export async function patchBusinessContentAdmin(req, res, next) {
   try {
     const b = await Business.findById(req.params.id)
     if (!b) throw new HttpError(404, 'Business not found')
-    let content = await BusinessContent.findOne({ businessId: b._id })
-    if (!content) {
-      content = await BusinessContent.create({ businessId: b._id })
-    }
-    const patch = req.body || {}
-    if (patch.profileFeed !== undefined) content.profileFeed = patch.profileFeed
-    if (patch.feedPageTitle !== undefined) content.feedPageTitle = patch.feedPageTitle
-    if (patch.feedPageDescription !== undefined) {
-      content.feedPageDescription = patch.feedPageDescription
-    }
-    await content.save()
+    const content = await applyBusinessContentUpdate(b._id, req.body || {})
     res.json({ ok: true, content })
   } catch (e) {
     next(e)

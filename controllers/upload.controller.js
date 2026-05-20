@@ -7,7 +7,15 @@ import {
 } from '../services/cloudinary.service.js'
 
 const OWNER_FOLDERS = new Set(['businesses', 'offers', 'gallery'])
-const ADMIN_FOLDERS = new Set(['categories', 'events', 'banners'])
+const ADMIN_FOLDERS = new Set([
+  'categories',
+  'events',
+  'banners',
+  'home-hero',
+  'home-connect',
+  'offer-ads',
+  'featured-events',
+])
 
 function allowedFolderForRole(role, folder) {
   if (role === 'BUSINESS_OWNER') return OWNER_FOLDERS.has(folder)
@@ -57,6 +65,30 @@ export async function uploadImageHandler(req, res, next) {
       public_id: uploaded.public_id,
       urls,
     })
+  } catch (e) {
+    next(e)
+  }
+}
+
+/**
+ * GET /api/upload/delivery-url?publicId=categories/...
+ * Resolve a CDN URL for an existing Cloudinary public_id (admin/owner previews).
+ */
+export async function getDeliveryUrlHandler(req, res, next) {
+  try {
+    if (!isCloudinaryConfigured()) {
+      throw new HttpError(503, 'Cloudinary is not configured on this server.')
+    }
+    const publicId = String(req.query.publicId || '').trim()
+    if (!publicId) {
+      throw new HttpError(400, 'publicId is required')
+    }
+    const urls = buildImageVariantUrls(publicId)
+    const url = urls.full || urls.medium || urls.thumbnail || ''
+    if (!url) {
+      throw new HttpError(404, 'Could not resolve image URL')
+    }
+    res.json({ ok: true, url, urls })
   } catch (e) {
     next(e)
   }

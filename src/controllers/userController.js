@@ -3,6 +3,10 @@ import { User } from '../models/User.js'
 import { Business } from '../models/Business.js'
 import { HttpError } from '../middleware/errorHandler.js'
 import { trackEvent } from '../services/analytics.service.js'
+import {
+  pushRecentlyViewed,
+  serializeListItem,
+} from './businessPublicController.js'
 
 const MAX_REVIEW_COMMENT = 2000
 
@@ -21,9 +25,64 @@ async function resolveBusinessByIdOrPublicId(businessId) {
 
 export async function me(req, res, next) {
   try {
-    const u = await User.findById(req.user._id)
+    const u = await User.findById(req.user._id).populate('savedBusinesses', 'publicId')
     if (!u) throw new HttpError(404, 'User not found')
-    res.json({ ok: true, user: u.toSafeObject() })
+    const safe = u.toSafeObject()
+    safe.savedBusinessProfileIds = (u.savedBusinesses || [])
+      .map((b) => (b && typeof b === 'object' ? b.publicId : null))
+      .filter(Boolean)
+    safe.savedBusinesses = safe.savedBusinessProfileIds
+    res.json({ ok: true, user: safe })
+  } catch (e) {
+    next(e)
+  }
+}
+
+export async function listSavedBusinesses(req, res, next) {
+  try {
+    const u = await User.findById(req.user._id).populate('savedBusinesses')
+    if (!u) throw new HttpError(404, 'User not found')
+    const items = (u.savedBusinesses || [])
+      .filter((b) => b && typeof b === 'object')
+      .map((b) => serializeListItem(b))
+    res.json({ ok: true, items })
+  } catch (e) {
+    next(e)
+  }
+}
+
+export async function listRecentBusinesses(req, res, next) {
+  try {
+    const u = await User.findById(req.user._id).populate('recentlyViewed')
+    if (!u) throw new HttpError(404, 'User not found')
+    const items = (u.recentlyViewed || [])
+      .filter((b) => b && typeof b === 'object')
+      .map((b) => serializeListItem(b))
+    res.json({ ok: true, items })
+  } catch (e) {
+    next(e)
+  }
+}
+
+/** Merge device-local recent profile ids after sign-in (guest QR scans before login). */
+export async function mergeRecentVisits(req, res, next) {
+  try {
+    if (req.user.role !== 'USER') {
+      return res.json({ ok: true, merged: 0 })
+    }
+    const raw = req.body?.profileIds
+    const profileIds = Array.isArray(raw)
+      ? [...new Set(raw.map((x) => String(x || '').trim()).filter(Boolean))]
+      : []
+    let merged = 0
+    for (const pid of [...profileIds].reverse()) {
+      const b = await resolveBusinessByIdOrPublicId(pid)
+      if (!b) continue
+      if (b.ownerId?.toString() === req.user._id.toString()) continue
+      await pushRecentlyViewed(req.user._id, b._id)
+      merged += 1
+    }
+    res.json({ ok: true, merged })
   } catch (e) {
     next(e)
   }
@@ -111,11 +170,16 @@ export async function createReview(req, res, next) {
 export async function saveBusiness(req, res, next) {
   try {
     const { businessId } = req.body
-    const b =
-      (await Business.findById(businessId)) ||
-      (await Business.findOne({ publicId: businessId }))
+    if (businessId == null || String(businessId).trim() === '') {
+      throw new HttpError(400, 'businessId is required')
+    }
+    const b = await resolveBusinessByIdOrPublicId(businessId)
     if (!b) throw new HttpError(404, 'Business not found')
+    if (b.ownerId?.toString() === req.user._id.toString()) {
+      throw new HttpError(400, 'You cannot save your own business')
+    }
     const u = await User.findById(req.user._id)
+    if (!u) throw new HttpError(404, 'User not found')
     const idStr = b._id.toString()
     const has = u.savedBusinesses.some((x) => x.toString() === idStr)
     if (has) {
@@ -125,7 +189,7 @@ export async function saveBusiness(req, res, next) {
       await trackEvent(b._id, 'save')
     }
     await u.save()
-    res.json({ ok: true, saved: !has, savedBusinesses: u.savedBusinesses })
+    res.json({ ok: true, saved: !has, profileId: b.publicId })
   } catch (e) {
     next(e)
   }
@@ -134,9 +198,7 @@ export async function saveBusiness(req, res, next) {
 export async function trackAnalytics(req, res, next) {
   try {
     const { businessId, type } = req.body
-    const b =
-      (await Business.findById(businessId)) ||
-      (await Business.findOne({ publicId: businessId }))
+    const b = await resolveBusinessByIdOrPublicId(businessId)
     if (!b) throw new HttpError(404, 'Business not found')
     if (!['view', 'click', 'enquiry'].includes(type)) {
       throw new HttpError(400, 'Invalid type')

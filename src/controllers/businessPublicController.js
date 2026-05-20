@@ -103,6 +103,7 @@ export async function listPublicCategories(req, res, next) {
           iconPublicId: c.iconPublicId || '',
           logoPublicId: c.logoPublicId || '',
           coverImagePublicId: c.coverImagePublicId || '',
+          showInDailyNeeds: Boolean(c.showInDailyNeeds),
           listingCount,
           subcategories,
         }
@@ -208,7 +209,11 @@ export async function getBusinessById(req, res, next) {
     await trackEvent(b._id, 'view')
 
     if (req.user?.role === 'USER') {
-      await pushRecentlyViewed(req.user._id, b._id)
+      const ownerStr = b.ownerId?.toString?.() ?? ''
+      const userStr = req.user._id.toString()
+      if (ownerStr !== userStr) {
+        await pushRecentlyViewed(req.user._id, b._id)
+      }
     }
 
     res.json({
@@ -335,7 +340,14 @@ export async function offerAds(req, res, next) {
     const { categoryId, subSlug, home, includeInactive, includeExpired } = req.query
     const filter = {}
     if (categoryId && isLikelyMongoObjectId(String(categoryId))) filter.categoryId = String(categoryId)
-    if (typeof subSlug === 'string' && subSlug.trim()) filter.subSlug = subSlug.trim()
+    const subSlugTrimmed = typeof subSlug === 'string' ? subSlug.trim() : ''
+    if (subSlugTrimmed) {
+      // Subcategory page: ads for this sub + category-wide ads (empty subSlug).
+      filter.$or = [{ subSlug: subSlugTrimmed }, { subSlug: '' }, { subSlug: null }]
+    } else if (categoryId && isLikelyMongoObjectId(String(categoryId))) {
+      // Category page (no sub): only category-wide ads, not sub-specific ones.
+      filter.$or = [{ subSlug: '' }, { subSlug: null }]
+    }
     if (home === '1' || home === 'true') filter.showOnHome = true
     if (!(includeInactive === '1' || includeInactive === 'true')) filter.isActive = true
 
@@ -357,9 +369,11 @@ export async function offerAds(req, res, next) {
         title: x.title,
         description: x.description || '',
         offerPercentage: x.offerPercentage ?? null,
+        currencySymbol: x.currencySymbol || '',
         priceActual: x.priceActual || '',
         priceOffer: x.priceOffer || '',
         imageUrl: x.imageUrl || '',
+        homeImageUrl: x.homeImageUrl || '',
         showOnHome: Boolean(x.showOnHome),
         startDate: x.startDate,
         endDate: x.endDate,
@@ -428,18 +442,41 @@ export async function nearbyBusinesses(req, res, next) {
   }
 }
 
-const MAX_RECENT = 40
+export const MAX_RECENT_VISITS = 40
 
-async function pushRecentlyViewed(userId, businessId) {
+export async function pushRecentlyViewed(userId, businessId) {
   const u = await User.findById(userId).select('recentlyViewed')
   if (!u) return
   const idStr = businessId.toString()
   const rest = (u.recentlyViewed || []).filter((x) => x.toString() !== idStr)
-  u.recentlyViewed = [businessId, ...rest].slice(0, MAX_RECENT)
+  u.recentlyViewed = [businessId, ...rest].slice(0, MAX_RECENT_VISITS)
   await u.save()
 }
 
-function serializeListItem(b) {
+/** Public: resolve profile ids to listing rows (guest recent page, order preserved). */
+export async function listBusinessesByPublicIds(req, res, next) {
+  try {
+    const raw = req.body?.profileIds
+    const profileIds = Array.isArray(raw)
+      ? [...new Set(raw.map((x) => String(x || '').trim()).filter(Boolean))].slice(0, MAX_RECENT_VISITS)
+      : []
+    if (!profileIds.length) {
+      return res.json({ ok: true, items: [] })
+    }
+    const filter = await publicMatch()
+    const rows = await Business.find({ publicId: { $in: profileIds }, ...filter }).lean()
+    const byPublicId = new Map(rows.map((b) => [b.publicId, b]))
+    const items = profileIds
+      .map((pid) => byPublicId.get(pid))
+      .filter(Boolean)
+      .map((b) => serializeListItem(b))
+    res.json({ ok: true, items })
+  } catch (e) {
+    next(e)
+  }
+}
+
+export function serializeListItem(b) {
   return {
     profileId: b.publicId,
     id: b._id.toString(),

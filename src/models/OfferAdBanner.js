@@ -10,11 +10,17 @@ const offerAdBannerSchema = new mongoose.Schema(
     description: { type: String, default: '', trim: true },
 
     offerPercentage: { type: Number, default: null },
+    /** e.g. ₹, $, € — used with priceActual / priceOffer when not using percentage. */
+    currencySymbol: { type: String, default: '', trim: true },
     priceActual: { type: String, default: '', trim: true },
     priceOffer: { type: String, default: '', trim: true },
 
     imageUrl: { type: String, default: '', trim: true },
     imagePublicId: { type: String, default: '', trim: true },
+
+    /** Landscape image for home carousel when {@link showOnHome} is true. */
+    homeImageUrl: { type: String, default: '', trim: true },
+    homeImagePublicId: { type: String, default: '', trim: true },
 
     /** Toggle to surface on home page carousel. */
     showOnHome: { type: Boolean, default: false, index: true },

@@ -16,6 +16,7 @@ r.use((req, _res, next) => {
   next()
 })
 
+r.get('/delivery-url', upload.getDeliveryUrlHandler)
 r.post('/image', imageUpload.single('file'), handleMulterError, upload.uploadImageHandler)
 r.delete('/image', upload.deleteImageHandler)
 

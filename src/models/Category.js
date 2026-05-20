@@ -11,6 +11,8 @@ const categorySchema = new mongoose.Schema(
     logoPublicId: { type: String, default: '' },
     coverImageUrl: { type: String, default: '' },
     coverImagePublicId: { type: String, default: '' },
+    /** When true, category appears in the home page “Daily Needs” carousel. */
+    showInDailyNeeds: { type: Boolean, default: false },
     subcategories: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
   { timestamps: true },

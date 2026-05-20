@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { sanitizeBusinessGeoFields } from '../services/businessGeoSanitize.js'
 
 const openingHoursSchema = new mongoose.Schema(
   {
@@ -69,15 +70,10 @@ const businessSchema = new mongoose.Schema(
       type: {
         type: String,
         enum: ['Point'],
-        default: 'Point',
       },
       coordinates: {
         type: [Number],
-        /**
-         * [lng, lat] - keep optional for legacy businesses.
-         * When unset, geo queries should exclude the document.
-         */
-        default: undefined,
+        /** [lng, lat] — only set when both values are valid; omit for non-geo listings. */
       },
     },
     /**
@@ -96,12 +92,10 @@ const businessSchema = new mongoose.Schema(
         type: {
           type: String,
           enum: ['Point'],
-          default: 'Point',
         },
         // IMPORTANT: GeoJSON coordinate order is [lng, lat]
         coordinates: {
           type: [Number],
-          default: [0, 0],
         },
       },
     },
@@ -147,6 +141,15 @@ const businessSchema = new mongoose.Schema(
   },
   { timestamps: true },
 )
+
+businessSchema.pre('save', function sanitizeGeoBeforeSave(next) {
+  try {
+    sanitizeBusinessGeoFields(this)
+    next()
+  } catch (e) {
+    next(e)
+  }
+})
 
 businessSchema.index({ location: '2dsphere' })
 businessSchema.index({ 'mapLocation.geoPoint': '2dsphere' })
