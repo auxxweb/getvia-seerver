@@ -14,6 +14,8 @@ r.use((req, _res, next) => {
 })
 
 r.post('/create-order', pay.createPaymentOrder)
+r.post('/activate-free', pay.activateFreePlan)
 r.post('/verify', pay.verifyPayment)
+r.post('/fail', pay.recordPaymentFailure)
 
 export default r

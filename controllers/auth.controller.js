@@ -63,6 +63,7 @@ export async function register(req, res, next) {
       ok: true,
       user: user.toSafeObject(),
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     })
   } catch (e) {
@@ -91,6 +92,7 @@ export async function registerBusinessOwner(req, res, next) {
       ok: true,
       user: user.toSafeObject(),
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     })
   } catch (e) {
@@ -117,6 +119,7 @@ export async function login(req, res, next) {
       ok: true,
       user: user.toSafeObject(),
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     })
   } catch (e) {
@@ -142,6 +145,7 @@ export async function refresh(req, res, next) {
     res.json({
       ok: true,
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     })
   } catch (e) {
@@ -245,6 +249,7 @@ export async function firebaseLogin(req, res, next) {
       success: true,
       user: user.toSafeObject(),
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       token: tokens.accessToken,
       expiresIn: tokens.expiresIn,
     })

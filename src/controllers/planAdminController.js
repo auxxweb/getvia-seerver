@@ -5,6 +5,7 @@ import {
   parseEntitlementsBody,
   assignPlanToBusiness,
 } from '../services/planEntitlements.service.js'
+import { completeBusinessOnboarding } from '../services/businessProfileMutations.js'
 
 function parseFeatures(input) {
   if (Array.isArray(input)) {
@@ -110,13 +111,17 @@ export async function listAllPlans(req, res, next) {
 export async function assignPlanToBusinessAdmin(req, res, next) {
   try {
     const { id: businessId } = req.params
-    const { planId, subscriptionStart, subscriptionEnd } = req.body
+    const { planId, subscriptionStart, subscriptionEnd, completeOnboarding: shouldPublish } =
+      req.body
     if (!planId) throw new HttpError(400, 'planId is required')
 
     const business = await assignPlanToBusiness(businessId, planId, {
       subscriptionStart,
       subscriptionEnd,
     })
+    if (shouldPublish) {
+      await completeBusinessOnboarding(business)
+    }
     await business.populate('planId')
     res.json({ ok: true, business })
   } catch (e) {
