@@ -146,10 +146,11 @@ export async function createReview(req, res, next) {
     b.reviewCount = stats[0]?.n || 0
     await b.save()
     await trackEvent(b._id, 'enquiry')
-    const populated = await Review.findById(r._id).populate('userId', 'name').lean()
+    const populated = await Review.findById(r._id).populate('userId', 'name photoURL').lean()
     const u = populated?.userId
     const userName =
       u && typeof u === 'object' && u.name ? u.name : (await User.findById(req.user._id).select('name').lean())?.name || 'User'
+    const userPhotoURL = u && typeof u === 'object' && u.photoURL ? u.photoURL : req.user.photoURL || ''
     res.status(201).json({
       ok: true,
       review: {
@@ -157,6 +158,7 @@ export async function createReview(req, res, next) {
         rating: populated.rating,
         comment: populated.comment,
         userName,
+        userPhotoURL,
         createdAt: populated.createdAt,
       },
       ratingAvg: b.ratingAvg,

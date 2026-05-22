@@ -12,6 +12,9 @@ export const ALL_TEMPLATE_IDS = [
   'template-ten',
   'template-eleven',
   'template-twelve',
+  'template-thirteen',
+  'template-fourteen',
+  'template-fifteen',
 ]
 
 export const DEFAULT_FREE_ENTITLEMENTS = {

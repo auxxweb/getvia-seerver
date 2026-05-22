@@ -212,7 +212,7 @@ export async function getBusinessById(req, res, next) {
     b = media.business || b
     content = media.content
     const reviews = await Review.find({ businessId: b._id })
-      .populate('userId', 'name')
+      .populate('userId', 'name photoURL')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean()
@@ -531,6 +531,7 @@ function serializeDetail(b, content, reviews) {
       rating: r.rating,
       comment: r.comment,
       userName: r.userId?.name || 'User',
+      userPhotoURL: r.userId?.photoURL || '',
       createdAt: r.createdAt,
     })),
   }

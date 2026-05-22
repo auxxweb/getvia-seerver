@@ -39,6 +39,13 @@ const LANDING_FIELD_LIMITS = {
   landingWelcomeDescription: 50,
 }
 
+const LANDING_FIELD_LABELS = {
+  landingBannerTitle: 'landing banner title',
+  landingBannerDescription: 'landing banner description',
+  landingWelcomeTitle: 'welcome title',
+  landingWelcomeDescription: 'welcome description',
+}
+
 const OFFERS_FIELD_LIMITS = {
   offersPageTitle: 8,
   offersPageDescription: 50,

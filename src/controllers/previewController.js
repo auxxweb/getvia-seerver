@@ -36,6 +36,7 @@ function serializeReview(r) {
     rating: r.rating,
     comment: r.comment,
     userName: r.userId?.name || 'User',
+    userPhotoURL: r.userId?.photoURL || '',
     createdAt: r.createdAt,
   }
 }
@@ -64,7 +65,7 @@ export async function getBusinessPreviewByToken(req, res, next) {
     const [content, reviews] = await Promise.all([
       BusinessContent.findOne({ businessId: business._id }).lean(),
       Review.find({ businessId: business._id })
-        .populate('userId', 'name')
+        .populate('userId', 'name photoURL')
         .sort({ createdAt: -1 })
         .limit(30)
         .lean(),

@@ -32,6 +32,9 @@ export const TEMPLATE_THEMES = {
   'template-ten': buildTemplate('template-ten', 'Template Ten'),
   'template-eleven': buildTemplate('template-eleven', 'Template Eleven'),
   'template-twelve': buildTemplate('template-twelve', 'Template Twelve'),
+  'template-thirteen': buildTemplate('template-thirteen', 'Template Thirteen'),
+  'template-fourteen': buildTemplate('template-fourteen', 'Template Fourteen'),
+  'template-fifteen': buildTemplate('template-fifteen', 'Template Fifteen'),
 }
 
 export const DEFAULT_TEMPLATE_ID = 'template-one'
