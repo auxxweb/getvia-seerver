@@ -7,6 +7,13 @@ import { sanitizeBusinessGeoFields } from '../services/businessGeoSanitize.js'
 import { validateCustomThemePatch } from '../services/theme.service.js'
 import { uploadMediaDataUrl } from './businessOwnerController.js'
 import { aiGenerate } from './aiController.js'
+import {
+  applyBusinessContentUpdate,
+  applyBusinessUpdate,
+  completeBusinessOnboarding,
+  createBusinessForOwner,
+  getBusinessDetailBundle,
+} from '../services/businessProfileMutations.js'
 
 function jwtSecret() {
   return process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET
@@ -184,8 +191,52 @@ export async function createBusinessProfile(req, res, next) {
       throw new HttpError(400, 'Password must be at least 8 characters')
     }
 
-    const exists = await User.findOne({ email })
-    if (exists) throw new HttpError(409, 'Email already registered')
+    const exists = await User.findOne({ email }).select('+password')
+    if (exists) {
+      if (exists.role !== 'BUSINESS_OWNER') {
+        throw new HttpError(409, 'Email already registered')
+      }
+      if (!exists.password) {
+        throw new HttpError(
+          400,
+          'This email uses Google sign-in only. Use “Already have an account” or choose a different email.',
+        )
+      }
+      if (!(await exists.comparePassword(password))) {
+        throw new HttpError(
+          409,
+          'Email already registered. Enter the correct password, or use “Already have an account”.',
+        )
+      }
+
+      let business = null
+      if (exists.ownedBusinessId) {
+        business = await Business.findById(exists.ownedBusinessId)
+        if (!business) {
+          exists.ownedBusinessId = null
+          await exists.save()
+        }
+      }
+      if (business) {
+        throw new HttpError(
+          409,
+          'This owner already has a listing. Use “Already have an account” to continue onboarding.',
+        )
+      }
+
+      business = await createBusinessForOwner(exists._id, { name: businessName })
+      if (name && name !== exists.name) {
+        exists.name = name
+        await exists.save()
+      }
+
+      return res.status(201).json({
+        ok: true,
+        resumed: true,
+        owner: exists.toSafeObject(),
+        business: business.toObject(),
+      })
+    }
 
     const owner = await User.create({
       name,
