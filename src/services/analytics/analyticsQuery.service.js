@@ -7,6 +7,8 @@ import { BusinessAnalytics } from '../../models/analytics/BusinessAnalytics.mode
 import { AdminAnalytics } from '../../models/analytics/AdminAnalytics.model.js'
 import { Review } from '../../models/Review.js'
 import { Business } from '../../models/Business.js'
+import { User } from '../../models/User.js'
+import { PaymentHistory } from '../../models/PaymentHistory.js'
 
 function utcDateKey(d) {
   return new Date(d).toISOString().slice(0, 10)
@@ -16,6 +18,47 @@ function addDays(d, n) {
   const x = new Date(d)
   x.setUTCDate(x.getUTCDate() + n)
   return x
+}
+
+/** Display label for super-admin analytics (matches onboarded list: planId.name, not legacy enum only). */
+export function formatBusinessPlanDisplay(row) {
+  const name =
+    (row.planName && String(row.planName).trim()) ||
+    (row.planTier && String(row.planTier).trim()) ||
+    'FREE'
+  const now = Date.now()
+  const endMs = row.subscriptionEnd ? new Date(row.subscriptionEnd).getTime() : null
+  const expiresMs = row.planExpiresAt ? new Date(row.planExpiresAt).getTime() : null
+  const status = row.subscriptionStatus
+
+  const timeExpired =
+    (Number.isFinite(endMs) && endMs < now) ||
+    (Number.isFinite(expiresMs) && expiresMs < now)
+
+  if (status === 'CANCELLED') return `${name} (cancelled)`
+  if (status === 'EXPIRED' || timeExpired) return `${name} (expired)`
+  return name
+}
+
+function rangeBoundsUtc(from, to) {
+  return {
+    start: new Date(`${from}T00:00:00.000Z`),
+    end: new Date(`${to}T23:59:59.999Z`),
+  }
+}
+
+async function signupsByDay(Model, start, end) {
+  const rows = await Model.aggregate([
+    { $match: { createdAt: { $gte: start, $lte: end } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ])
+  return rows.map((r) => ({ date: r._id, count: r.count }))
 }
 
 export function resolveDateRange(q) {
@@ -31,6 +74,8 @@ export function resolveDateRange(q) {
     to = from
   } else if (preset === 'last_7d') {
     from = utcDateKey(addDays(now, -6))
+  } else if (preset === 'last_14d') {
+    from = utcDateKey(addDays(now, -13))
   } else if (preset === 'last_90d') {
     from = utcDateKey(addDays(now, -89))
   } else if (preset === 'last_30d') {
@@ -169,8 +214,41 @@ export async function getBusinessDashboard(businessId, query) {
   return out
 }
 
+async function livePlatformSnapshot() {
+  const [users, businesses, activeBiz, reviews, payments] = await Promise.all([
+    User.countDocuments(),
+    Business.countDocuments(),
+    Business.countDocuments({ approvalStatus: 'APPROVED' }),
+    Review.countDocuments(),
+    PaymentHistory.aggregate([
+      { $match: { status: 'PAID' } },
+      { $group: { _id: null, revenuePaise: { $sum: '$amountPaise' } } },
+    ]),
+  ])
+  const revenuePaise = payments[0]?.revenuePaise || 0
+  const planBreakdown = await Business.aggregate([
+    { $match: { approvalStatus: 'APPROVED' } },
+    { $group: { _id: '$plan', n: { $sum: 1 } } },
+  ])
+  return {
+    totals: {
+      users,
+      businesses,
+      activeBusinesses: activeBiz,
+      reviews,
+      revenuePaise,
+      revenueDisplay: (revenuePaise / 100).toFixed(2),
+    },
+    subscriptionByPlan: Object.fromEntries(planBreakdown.map((p) => [p._id || 'UNKNOWN', p.n])),
+    dauToday: 0,
+    mauApprox: 0,
+    eventVolume24h: 0,
+  }
+}
+
 export async function getPlatformDashboard(query) {
   const { from, to } = resolveDateRange(query)
+  const { start: rangeStart, end: rangeEnd } = rangeBoundsUtc(from, to)
   const daily = await AnalyticsDaily.find({
     scope: 'platform',
     businessId: null,
@@ -180,7 +258,16 @@ export async function getPlatformDashboard(query) {
     .lean()
 
   const merged = mergeDailyRows(daily)
-  const admin = await AdminAnalytics.findOne({ key: 'platform' }).lean()
+  const adminDoc = await AdminAnalytics.findOne({ key: 'platform' }).lean()
+  const admin =
+    adminDoc?.totals?.users != null ? adminDoc : { ...(adminDoc || {}), ...(await livePlatformSnapshot()) }
+
+  const [userGrowth, businessGrowth, usersByRole, businessOwners] = await Promise.all([
+    signupsByDay(User, rangeStart, rangeEnd),
+    signupsByDay(Business, rangeStart, rangeEnd),
+    User.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]),
+    User.countDocuments({ role: 'BUSINESS_OWNER' }),
+  ])
 
   const topBusinesses = await AnalyticsDaily.aggregate([
     {
@@ -216,17 +303,40 @@ export async function getPlatformDashboard(query) {
     },
     { $unwind: { path: '$biz', preserveNullAndEmptyArrays: true } },
     {
+      $lookup: {
+        from: 'plans',
+        localField: 'biz.planId',
+        foreignField: '_id',
+        as: 'planDoc',
+      },
+    },
+    { $unwind: { path: '$planDoc', preserveNullAndEmptyArrays: true } },
+    {
       $project: {
         businessId: '$_id',
         name: '$biz.name',
         publicId: '$biz.publicId',
         category: '$biz.category',
-        plan: '$biz.plan',
+        planName: '$planDoc.name',
+        planTier: '$biz.plan',
+        subscriptionStatus: '$biz.subscriptionStatus',
+        subscriptionEnd: '$biz.subscriptionEnd',
+        planExpiresAt: '$biz.planExpiresAt',
         views: 1,
         engagement: 1,
       },
     },
   ])
+
+  const topBusinessesFormatted = topBusinesses.map((row) => ({
+    businessId: row.businessId,
+    name: row.name,
+    publicId: row.publicId,
+    category: row.category,
+    plan: formatBusinessPlanDisplay(row),
+    views: row.views,
+    engagement: row.engagement,
+  }))
 
   const categoryTrend = await Business.aggregate([
     { $match: { approvalStatus: 'APPROVED' } },
@@ -251,6 +361,10 @@ export async function getPlatformDashboard(query) {
   return {
     range: { from, to },
     snapshot: admin,
+    usersByRole: usersByRole.map((r) => ({ role: r._id || 'UNKNOWN', count: r.count })),
+    businessOwners,
+    userGrowth,
+    businessGrowth,
     kpis: {
       platformViews: counterGet(merged.counters, 'PROFILE_VIEW') + counterGet(merged.counters, 'PAGE_VISIT'),
       whatsappClicks: counterGet(merged.counters, 'WHATSAPP_CLICK'),
@@ -262,7 +376,7 @@ export async function getPlatformDashboard(query) {
     browser: merged.byBrowser,
     geography: { countries: merged.byCountry, cities: merged.byCity },
     trafficSources: merged.bySource,
-    topBusinesses,
+    topBusinesses: topBusinessesFormatted,
     topCategories: categoryTrend.map((c) => ({ category: c._id || '—', count: c.n })),
     trend,
     heatmap,
@@ -308,8 +422,8 @@ export function toCsvRowsPlatform(dashboard) {
     ['date', 'views', 'events'],
     ...trend.map((t) => [t.date, t.views, t.events]),
     [],
-    ['business', 'publicId', 'views', 'engagement'],
-    ...topBusinesses.map((b) => [b.name, b.publicId, b.views, b.engagement]),
+    ['business', 'publicId', 'plan', 'views', 'engagement'],
+    ...topBusinesses.map((b) => [b.name, b.publicId, b.plan, b.views, b.engagement]),
   ]
   return lines
 }

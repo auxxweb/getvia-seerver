@@ -5,6 +5,9 @@ import { HttpError } from '../middleware/errorHandler.js'
 
 function serializeAudit(doc) {
   const u = doc.performedBy
+  const b = doc.businessId
+  const bPopulated =
+    b && typeof b === 'object' && b._id != null && (b.name !== undefined || b.publicId !== undefined)
   return {
     id: doc._id.toString(),
     action: doc.action,
@@ -12,6 +15,9 @@ function serializeAudit(doc) {
     adminNotes: doc.adminNotes || '',
     createdAt: doc.createdAt,
     performedByEmail: u && typeof u === 'object' && u.email ? u.email : '',
+    businessId: bPopulated ? b._id.toString() : b ? String(b) : '',
+    businessName: bPopulated ? b.name || '' : '',
+    businessPublicId: bPopulated ? b.publicId || '' : '',
   }
 }
 
@@ -31,7 +37,28 @@ function serializeRequest(doc) {
     businessId: bPopulated ? b._id.toString() : String(doc.businessId),
     businessName: bPopulated ? b.name || '' : '',
     businessPublicId: bPopulated ? b.publicId || '' : '',
+    businessIsFeatured: bPopulated ? Boolean(b.isFeatured) : false,
+    businessIsVerified: bPopulated ? Boolean(b.isVerified) : false,
     requestedByEmail: u && typeof u === 'object' && u.email ? u.email : '',
+  }
+}
+
+/**
+ * GET /admin/badge-audit — global grant/revoke history (newest first)
+ */
+export async function listAllBadgeAudit(req, res, next) {
+  try {
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '100'), 10) || 100, 1), 200)
+    const items = await BusinessBadgeAudit.find({})
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('businessId', 'name publicId')
+      .populate('performedBy', 'email name')
+      .lean()
+
+    res.json({ ok: true, items: items.map(serializeAudit) })
+  } catch (e) {
+    next(e)
   }
 }
 
@@ -39,11 +66,27 @@ export async function listPendingBadgeRequests(req, res, next) {
   try {
     const items = await BadgeRequest.find({ status: 'PENDING' })
       .sort({ createdAt: -1 })
-      .populate('businessId', 'name publicId onboardingCompletedAt')
+      .populate('businessId', 'name publicId onboardingCompletedAt isFeatured isVerified')
       .populate('requestedBy', 'email name')
       .lean()
 
     res.json({ ok: true, items: items.map(serializeRequest) })
+  } catch (e) {
+    next(e)
+  }
+}
+
+/**
+ * GET /admin/badge-requests/:requestId
+ */
+export async function getBadgeRequest(req, res, next) {
+  try {
+    const doc = await BadgeRequest.findById(req.params.requestId)
+      .populate('businessId', 'name publicId isFeatured isVerified')
+      .populate('requestedBy', 'email name')
+      .lean()
+    if (!doc) throw new HttpError(404, 'Badge request not found')
+    res.json({ ok: true, item: serializeRequest(doc) })
   } catch (e) {
     next(e)
   }
@@ -70,6 +113,27 @@ export async function grantBusinessBadge(req, res, next) {
     const b = await Business.findById(req.params.id)
     if (!b) throw new HttpError(404, 'Business not found')
 
+    if (badgeRequestId) {
+      const reqDoc = await BadgeRequest.findById(String(badgeRequestId))
+      if (!reqDoc) throw new HttpError(404, 'Badge request not found')
+      if (reqDoc.businessId.toString() !== b._id.toString()) {
+        throw new HttpError(400, 'Badge request does not belong to this business')
+      }
+      if (reqDoc.status !== 'PENDING') {
+        throw new HttpError(400, 'Badge request is not pending')
+      }
+      if (reqDoc.badgeType !== badgeType) {
+        throw new HttpError(400, 'Badge request type does not match the badge being granted')
+      }
+    }
+
+    if (badgeType === 'FEATURED' && b.isFeatured) {
+      throw new HttpError(400, 'This listing already has the Featured badge.')
+    }
+    if (badgeType === 'VERIFIED' && b.isVerified) {
+      throw new HttpError(400, 'This listing already has the Verified badge.')
+    }
+
     if (badgeType === 'FEATURED') b.isFeatured = true
     if (badgeType === 'VERIFIED') b.isVerified = true
     await b.save()
@@ -84,16 +148,6 @@ export async function grantBusinessBadge(req, res, next) {
 
     if (badgeRequestId) {
       const reqDoc = await BadgeRequest.findById(String(badgeRequestId))
-      if (!reqDoc) throw new HttpError(404, 'Badge request not found')
-      if (reqDoc.businessId.toString() !== b._id.toString()) {
-        throw new HttpError(400, 'Badge request does not belong to this business')
-      }
-      if (reqDoc.status !== 'PENDING') {
-        throw new HttpError(400, 'Badge request is not pending')
-      }
-      if (reqDoc.badgeType !== badgeType) {
-        throw new HttpError(400, 'Badge request type does not match selected badge')
-      }
       reqDoc.status = 'FULFILLED'
       reqDoc.adminNotes = String(adminNotes || '').trim()
       reqDoc.fulfilledAt = new Date()

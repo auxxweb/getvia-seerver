@@ -10,18 +10,10 @@ import {
   getRazorpayKeyMode,
   assertRazorpayConfigured,
 } from '../services/razorpay.service.js'
+import { legacyPlanTierFromName } from '../services/planEntitlements.service.js'
 
 function inrToPaise(inr) {
   return Math.round(Number(inr) * 100)
-}
-
-/** Map purchased plan display name to legacy `Business.plan` enum for existing feature gates. */
-function legacyPlanTier(planName) {
-  const n = String(planName || '')
-    .toUpperCase()
-    .trim()
-  if (['FREE', 'CORE', 'PRO', 'PREMIUM'].includes(n)) return n
-  return 'PRO'
 }
 
 async function syncPaymentHistory({ userId, businessId, plan, payment, status, raw = null }) {
@@ -33,7 +25,7 @@ async function syncPaymentHistory({ userId, businessId, plan, payment, status, r
       razorpayPaymentId: payment?.razorpayPaymentId || '',
       amountPaise: payment?.amount ?? 0,
       currency: payment?.currency || 'INR',
-      plan: legacyPlanTier(plan.name),
+      plan: legacyPlanTierFromName(plan.name),
       status,
       raw,
     })
@@ -74,7 +66,7 @@ export async function applySubscriptionToBusiness(business, plan) {
   business.subscriptionStart = now
   business.subscriptionEnd = end
   business.planExpiresAt = end
-  business.plan = legacyPlanTier(plan.name)
+  business.plan = legacyPlanTierFromName(plan.name)
   await business.save()
   return Business.findById(business._id).populate('planId').lean()
 }

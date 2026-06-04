@@ -31,28 +31,101 @@ export function parseEntitlementsBody(body = {}) {
   }
 }
 
-function normalizeEntitlements(raw) {
-  const base = { ...DEFAULT_FREE_ENTITLEMENTS, ...(raw || {}) }
+/** Paid-plan defaults when a limit field is omitted in DB (null = unlimited). */
+const PAID_PLAN_ENTITLEMENT_DEFAULTS = {
+  galleryImageLimit: null,
+  templateCount: null,
+  aiPromptsPerMonth: null,
+  offerPostingPeriod: 'monthly',
+  offerPostingLimit: null,
+  aiInsightsEnabled: false,
+}
+
+/**
+ * Map plan display name → legacy Business.plan enum (e.g. "Core Plan" → CORE).
+ */
+export function legacyPlanTierFromName(planName) {
+  const n = String(planName || '').toUpperCase().trim()
+  if (['FREE', 'CORE', 'PRO', 'PREMIUM'].includes(n)) return n
+  if (n.includes('PREMIUM')) return 'PREMIUM'
+  if (n.includes('CORE')) return 'CORE'
+  if (n.includes('PRO')) return 'PRO'
+  if (n.includes('FREE')) return 'FREE'
+  return 'PRO'
+}
+
+function normalizeOfferPeriod(raw) {
+  const p = String(raw || 'monthly').toLowerCase()
+  return ['daily', 'weekly', 'monthly'].includes(p) ? p : 'monthly'
+}
+
+/**
+ * @param {object|null|undefined} raw Plan.entitlements subdocument
+ * @param {{ tier?: 'free' | 'paid' }} [options]
+ */
+function normalizeEntitlements(raw, options = {}) {
+  const tier = options.tier === 'paid' ? 'paid' : 'free'
+  const defaults = tier === 'paid' ? PAID_PLAN_ENTITLEMENT_DEFAULTS : DEFAULT_FREE_ENTITLEMENTS
+  const src = raw && typeof raw === 'object' ? raw : {}
+
   return {
-    galleryImageLimit: base.galleryImageLimit ?? null,
-    templateCount: base.templateCount ?? null,
-    aiPromptsPerMonth: base.aiPromptsPerMonth ?? null,
-    offerPostingPeriod: base.offerPostingPeriod || 'monthly',
-    offerPostingLimit: base.offerPostingLimit ?? null,
-    aiInsightsEnabled: Boolean(base.aiInsightsEnabled),
+    galleryImageLimit: Object.prototype.hasOwnProperty.call(src, 'galleryImageLimit')
+      ? parsePlanLimit(src.galleryImageLimit)
+      : defaults.galleryImageLimit,
+    templateCount: Object.prototype.hasOwnProperty.call(src, 'templateCount')
+      ? parsePlanLimit(src.templateCount)
+      : defaults.templateCount,
+    aiPromptsPerMonth: Object.prototype.hasOwnProperty.call(src, 'aiPromptsPerMonth')
+      ? parsePlanLimit(src.aiPromptsPerMonth)
+      : defaults.aiPromptsPerMonth,
+    offerPostingPeriod: src.offerPostingPeriod
+      ? normalizeOfferPeriod(src.offerPostingPeriod)
+      : defaults.offerPostingPeriod,
+    offerPostingLimit: Object.prototype.hasOwnProperty.call(src, 'offerPostingLimit')
+      ? parsePlanLimit(src.offerPostingLimit)
+      : defaults.offerPostingLimit,
+    aiInsightsEnabled:
+      Object.prototype.hasOwnProperty.call(src, 'aiInsightsEnabled')
+        ? Boolean(src.aiInsightsEnabled)
+        : Boolean(defaults.aiInsightsEnabled),
   }
+}
+
+async function resolvePlanDocument(business) {
+  if (business.planId) {
+    if (typeof business.planId === 'object' && business.planId._id) {
+      return business.planId
+    }
+    return Plan.findById(business.planId).lean()
+  }
+
+  const legacy = String(business.plan || '').trim()
+  if (!legacy || legacy.toUpperCase() === 'FREE') return null
+
+  const byExact = await Plan.findOne({
+    name: new RegExp(`^${legacy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    isActive: true,
+  }).lean()
+  if (byExact) return byExact
+
+  const tier = legacyPlanTierFromName(legacy)
+  if (tier === 'FREE') return null
+  return Plan.findOne({ name: new RegExp(tier, 'i'), isActive: true }).sort({ price: 1 }).lean()
 }
 
 export async function resolveBusinessEntitlements(businessId) {
   const business = await Business.findById(businessId).populate('planId').lean()
   if (!business) throw new HttpError(404, 'Business not found')
 
-  const planDoc = business.planId
-  const planName = planDoc?.name || business.plan || 'FREE'
-  const entitlements = normalizeEntitlements(planDoc?.entitlements)
-
   const subscriptionActive =
     !business.subscriptionEnd || new Date(business.subscriptionEnd).getTime() >= Date.now()
+
+  const planDoc = await resolvePlanDocument(business)
+  const planName = planDoc?.name || business.plan || 'FREE'
+  const entitlements = normalizeEntitlements(
+    subscriptionActive && planDoc ? planDoc.entitlements : null,
+    { tier: subscriptionActive && planDoc ? 'paid' : 'free' },
+  )
 
   return {
     business,
@@ -239,10 +312,7 @@ export async function assignPlanToBusiness(businessId, planId, options = {}) {
       : new Date(start.getTime() + days * 86400000)
 
   business.planId = plan._id
-  const tier = String(plan.name || '')
-    .toUpperCase()
-    .trim()
-  business.plan = ['FREE', 'CORE', 'PRO', 'PREMIUM'].includes(tier) ? tier : 'PRO'
+  business.plan = legacyPlanTierFromName(plan.name)
   business.subscriptionStatus = 'ACTIVE'
   business.subscriptionStart = start
   business.subscriptionEnd = end

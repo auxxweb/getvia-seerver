@@ -350,10 +350,22 @@ export async function applyBusinessContentUpdate(businessId, patch) {
   validateProductsContentPatch(patch)
   mergeObj('landingSection')
   mergeObj('welcomeSection')
-  if (patch.offers !== undefined) content.offers = patch.offers
-  if (patch.coreServices !== undefined) content.coreServices = patch.coreServices
-  if (patch.catalogue !== undefined) content.catalogue = patch.catalogue
-  if (patch.gallery !== undefined) content.gallery = patch.gallery
+  if (patch.offers !== undefined) {
+    content.set('offers', patch.offers)
+    content.markModified('offers')
+  }
+  if (patch.coreServices !== undefined) {
+    content.set('coreServices', patch.coreServices)
+    content.markModified('coreServices')
+  }
+  if (patch.catalogue !== undefined) {
+    content.set('catalogue', patch.catalogue)
+    content.markModified('catalogue')
+  }
+  if (patch.gallery !== undefined) {
+    content.set('gallery', patch.gallery)
+    content.markModified('gallery')
+  }
   if (patch.corePageTitle !== undefined) content.corePageTitle = patch.corePageTitle
   if (patch.corePageDescription !== undefined) content.corePageDescription = patch.corePageDescription
   if (patch.productsPageTitle !== undefined) content.productsPageTitle = patch.productsPageTitle
@@ -364,7 +376,10 @@ export async function applyBusinessContentUpdate(businessId, patch) {
   if (patch.offersPageDescription !== undefined) {
     content.offersPageDescription = patch.offersPageDescription
   }
-  if (patch.profileFeed !== undefined) content.profileFeed = patch.profileFeed
+  if (patch.profileFeed !== undefined) {
+    content.set('profileFeed', patch.profileFeed)
+    content.markModified('profileFeed')
+  }
   if (patch.feedPageTitle !== undefined) content.feedPageTitle = patch.feedPageTitle
   if (patch.feedPageDescription !== undefined) {
     content.feedPageDescription = patch.feedPageDescription

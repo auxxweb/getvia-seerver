@@ -1,4 +1,5 @@
 import multer from 'multer'
+import { isAllowedImageUpload } from '../src/constants/imageUpload.js'
 import { HttpError } from '../src/middleware/errorHandler.js'
 
 const MAX_BYTES = Number(process.env.UPLOAD_MAX_IMAGE_BYTES || 2 * 1024 * 1024)
@@ -6,15 +7,11 @@ const MAX_BYTES = Number(process.env.UPLOAD_MAX_IMAGE_BYTES || 2 * 1024 * 1024)
 const storage = multer.memoryStorage()
 
 const imageFileFilter = (_req, file, cb) => {
-  const mime = (file.mimetype || '').toLowerCase()
-  const name = (file.originalname || '').toLowerCase()
-  const mimeOk = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(mime)
-  const extOk = /\.(jpe?g|png|webp)$/i.test(name)
-  if (mimeOk || extOk) {
+  if (isAllowedImageUpload(file)) {
     cb(null, true)
     return
   }
-  cb(new HttpError(400, 'Only JPG, PNG, and WebP images are allowed'))
+  cb(new HttpError(400, 'Only image files are allowed'))
 }
 
 export const imageUpload = multer({

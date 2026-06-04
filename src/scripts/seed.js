@@ -9,6 +9,7 @@ import { Category } from '../models/Category.js'
 import { Event } from '../models/Event.js'
 import { Analytics } from '../models/Analytics.js'
 import { Plan } from '../models/Plan.js'
+import { seedSiteContent } from './seedSiteContent.js'
 
 const DEMO = [
   {
@@ -207,6 +208,8 @@ async function main() {
       console.log('Seeded business', d.publicId)
     }
   }
+
+  await seedSiteContent()
 
   await mongoose.disconnect()
   process.exit(0)

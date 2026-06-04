@@ -9,6 +9,9 @@ import * as homeHero from '../controllers/homeHeroBannerController.js'
 import * as homeConnect from '../controllers/homeConnectSectionController.js'
 import * as homeFeaturedEvents from '../controllers/homeFeaturedEventController.js'
 import * as bizProfiles from '../controllers/adminBusinessProfileController.js'
+import * as site from '../controllers/siteContentController.js'
+import * as subscriptionRevenue from '../controllers/subscriptionRevenueAdminController.js'
+import * as adminSettings from '../controllers/adminSettingsController.js'
 
 const r = Router()
 r.use(authenticate(true))
@@ -20,6 +23,7 @@ r.delete('/plan/:id', plans.deletePlan)
 r.get('/plan/all', plans.listAllPlans)
 
 r.get('/analytics', admin.platformAnalytics)
+r.get('/subscriptions/revenue', subscriptionRevenue.getSubscriptionRevenueDashboard)
 r.get('/analytics/dashboard', analyticsDash.platformAnalyticsDashboard)
 r.get('/analytics/export', analyticsDash.exportPlatformAnalytics)
 r.get('/home-hero', homeHero.getAdminHomeHero)
@@ -58,9 +62,13 @@ r.delete('/business-profiles/:id/theme/custom/:templateId', bizProfiles.deleteBu
 r.post('/business-profiles/media/data-url', bizProfiles.uploadMediaDataUrl)
 r.post('/business-profiles/ai/generate', bizProfiles.aiGenerate)
 
+r.get('/users', admin.listPlatformUsers)
+r.patch('/users/:id/block', admin.setConsumerBlocked)
 r.get('/businesses', admin.listBusinessesAdmin)
 r.get('/onboarded-businesses', admin.listOnboardedBusinesses)
 r.get('/badge-requests', badgeReq.listPendingBadgeRequests)
+r.get('/badge-requests/:requestId', badgeReq.getBadgeRequest)
+r.get('/badge-audit', badgeReq.listAllBadgeAudit)
 r.get('/businesses/:id', admin.getBusinessAdminDetail)
 r.post('/businesses/:id/grant-badge', badgeReq.grantBusinessBadge)
 r.post('/businesses/:id/revoke-badge', badgeReq.revokeBusinessBadge)
@@ -71,5 +79,19 @@ r.patch('/businesses/:id/owner-block', admin.setBusinessOwnerBlocked)
 r.get('/businesses/:id/content', admin.getBusinessContentAdmin)
 r.patch('/businesses/:id/content', admin.patchBusinessContentAdmin)
 r.patch('/businesses/:id/plan', plans.assignPlanToBusinessAdmin)
+
+r.get('/support-messages', site.listSupportMessagesAdmin)
+r.patch('/support-messages/:id', site.patchSupportMessageAdmin)
+r.get('/help-articles', site.listHelpArticlesAdmin)
+r.post('/help-articles', site.createHelpArticleAdmin)
+r.put('/help-articles/:id', site.updateHelpArticleAdmin)
+r.delete('/help-articles/:id', site.deleteHelpArticleAdmin)
+r.get('/legal-documents', site.listLegalDocumentsAdmin)
+r.put('/legal-documents', site.upsertLegalDocumentAdmin)
+
+r.get('/settings/account', adminSettings.getAccount)
+r.patch('/settings/account', adminSettings.updateAccount)
+r.post('/settings/change-password', adminSettings.changePassword)
+r.get('/settings/platform', adminSettings.getPlatformSettings)
 
 export default r

@@ -11,6 +11,7 @@ import {
   getApiOrigin,
   prepareBusinessMediaForResponse,
 } from '../services/legacyImageUrls.service.js'
+import { discoverBusinesses as runDiscoverBusinesses } from '../services/businessDiscover.service.js'
 
 function parseFiniteNumber(value) {
   const n = typeof value === 'number' ? value : Number(String(value))
@@ -118,6 +119,16 @@ export async function listPublicCategories(req, res, next) {
       ok: true,
       items: itemsOut,
     })
+  } catch (e) {
+    next(e)
+  }
+}
+
+/** GET /api/business/discover — smart search (text + geo, nearest first, expanding radius). */
+export async function discoverBusinesses(req, res, next) {
+  try {
+    const data = await runDiscoverBusinesses(req.query)
+    res.json(data)
   } catch (e) {
     next(e)
   }

@@ -11,6 +11,48 @@ function isLikelyMongoObjectId(id) {
   return typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)
 }
 
+function slugifyParam(s) {
+  return String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** Slugs for category subcategories (matches public browse + admin offer form). */
+function subSlugOptionsFromCategory(cat) {
+  const subs = cat?.subcategories || []
+  const seen = new Set()
+  const out = []
+  for (const raw of subs) {
+    const title =
+      typeof raw === 'string' ? raw : String(raw?.title || raw?.name || '').trim()
+    if (!title) continue
+    let slug = slugifyParam(title)
+    let n = 0
+    while (seen.has(slug)) {
+      n += 1
+      slug = `${slugifyParam(title)}-${n}`
+    }
+    seen.add(slug)
+    out.push(slug)
+  }
+  return out
+}
+
+function assertSubSlugForCategory(cat, subSlug) {
+  const trimmed = String(subSlug || '').trim()
+  const allowed = subSlugOptionsFromCategory(cat)
+  if (!allowed.length) {
+    throw new HttpError(400, 'Selected category has no subcategories; add subcategories first')
+  }
+  if (!trimmed) throw new HttpError(400, 'subSlug is required')
+  if (!allowed.includes(trimmed)) {
+    throw new HttpError(400, 'subSlug must match a subcategory on the selected category')
+  }
+  return trimmed
+}
+
 function parseDateOrThrow(raw, label) {
   const d = new Date(String(raw || ''))
   if (!Number.isFinite(d.getTime())) throw new HttpError(400, `${label} must be a valid date`)
@@ -137,6 +179,7 @@ export async function createOfferAd(req, res, next) {
     if (!isLikelyMongoObjectId(payload.categoryId)) throw new HttpError(400, 'categoryId is required')
     const cat = await Category.findById(payload.categoryId).lean()
     if (!cat) throw new HttpError(404, 'Category not found')
+    payload.subSlug = assertSubSlugForCategory(cat, payload.subSlug)
     const created = await OfferAdBanner.create(payload)
     const populated = await OfferAdBanner.findById(created._id).populate('categoryId', 'name').lean()
     res.status(201).json({ ok: true, item: mapOfferAdItem(populated) })
@@ -165,6 +208,10 @@ export async function updateOfferAd(req, res, next) {
     } else {
       merged.categoryId = existing.categoryId
     }
+
+    const cat = await Category.findById(merged.categoryId).lean()
+    if (!cat) throw new HttpError(404, 'Category not found')
+    merged.subSlug = assertSubSlugForCategory(cat, merged.subSlug)
 
     existing.set(merged)
     await existing.save()

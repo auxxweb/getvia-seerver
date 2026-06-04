@@ -1,12 +1,22 @@
-export function errorHandler(err, _req, res, _next) {
+export function errorHandler(err, req, res, _next) {
   const status = err.status || err.statusCode || 500
   let message = err.message || 'Internal Server Error'
   if (process.env.NODE_ENV === 'production' && status >= 500) {
     message = 'Internal Server Error'
   }
-  if (process.env.NODE_ENV !== 'production') {
+
+  if (status >= 500) {
+    console.error('[api]', {
+      status,
+      method: req.method,
+      path: req.originalUrl,
+      message: err.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+    })
+  } else if (process.env.NODE_ENV !== 'production') {
     console.error(err)
   }
+
   res.status(status).json({
     ok: false,
     error: message,

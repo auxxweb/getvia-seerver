@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema(
      * When set and in the past, admin-super shows a renewal banner.
      */
     subscriptionExpiresAt: { type: Date, default: null },
+    /** Hashed token for email password reset (business admin / legacy accounts). */
+    passwordResetTokenHash: { type: String, select: false, default: null },
+    passwordResetExpiresAt: { type: Date, select: false, default: null },
   },
   { timestamps: true },
 )

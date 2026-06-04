@@ -45,6 +45,13 @@ export function authenticate(required = true) {
       const decoded = verifyAccessToken(token, secret)
       const user = await User.findById(decoded.sub)
       if (!user) throw new HttpError(401, 'User not found')
+      if (user.isBlocked && user.role !== 'SUPER_ADMIN') {
+        const msg =
+          user.role === 'BUSINESS_OWNER'
+            ? 'Your business account has been suspended.'
+            : 'Your account has been suspended.'
+        throw new HttpError(403, msg)
+      }
       req.user = user
       req.tokenPayload = decoded
       next()

@@ -10,23 +10,45 @@ export function validateEnv() {
     errors.push('MONGO_URI (or MONGODB_URI) is required')
   }
 
-  const jwt = process.env.JWT_SECRET?.trim()
-  if (!jwt || jwt.length < 32) {
-    errors.push('JWT_SECRET must be at least 32 characters')
+  const jwtSecret = process.env.JWT_SECRET?.trim()
+  const accessSecret = process.env.JWT_ACCESS_SECRET?.trim()
+  const refreshSecret = process.env.JWT_REFRESH_SECRET?.trim()
+
+  const hasLegacyJwt = Boolean(jwtSecret && jwtSecret.length >= 32)
+  const hasSplitJwt =
+    Boolean(accessSecret && accessSecret.length >= 32) &&
+    Boolean(refreshSecret && refreshSecret.length >= 32)
+
+  if (!hasLegacyJwt && !hasSplitJwt) {
+    errors.push(
+      'Set JWT_SECRET (≥32 chars) or both JWT_ACCESS_SECRET and JWT_REFRESH_SECRET (≥32 chars each)',
+    )
   }
 
   if (isProd) {
-    const refresh = process.env.JWT_REFRESH_SECRET?.trim()
-    if (!refresh || refresh.length < 32) {
-      errors.push('JWT_REFRESH_SECRET must be set (≥32 chars) in production')
+    if (hasSplitJwt && accessSecret === refreshSecret) {
+      errors.push('JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET in production')
     }
-    if (refresh && jwt && refresh === jwt) {
-      errors.push('JWT_REFRESH_SECRET must differ from JWT_SECRET in production')
+    if (hasLegacyJwt && !hasSplitJwt) {
+      if (!refreshSecret || refreshSecret.length < 32) {
+        errors.push('JWT_REFRESH_SECRET must be set (≥32 chars) in production')
+      } else if (refreshSecret === jwtSecret) {
+        errors.push('JWT_REFRESH_SECRET must differ from JWT_SECRET in production')
+      }
     }
 
     const origins = process.env.CLIENT_ORIGINS?.trim()
     if (!origins) {
       errors.push('CLIENT_ORIGINS is required in production (comma-separated allowed origins)')
+    }
+
+    const analyticsSalt = process.env.ANALYTICS_IP_SALT?.trim()
+    if (!analyticsSalt || analyticsSalt.length < 16) {
+      errors.push('ANALYTICS_IP_SALT is required in production (≥16 chars, random)')
+    }
+
+    if (jwtSecret === 'change-me-min-32-characters-long-secret!!') {
+      errors.push('JWT_SECRET must be changed from the example placeholder before production deploy')
     }
   }
 

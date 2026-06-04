@@ -260,9 +260,56 @@ export async function listOnboardedBusinesses(req, res, next) {
     const items = await Business.find({ onboardingCompletedAt: { $ne: null } })
       .populate('ownerId', 'name email isBlocked')
       .populate('planId', 'name price validity isActive')
-      .sort({ onboardingCompletedAt: -1 })
       .lean()
+    items.sort((a, b) => badgeSortRank(b) - badgeSortRank(a) || byOnboardedDesc(a, b))
     res.json({ ok: true, items })
+  } catch (e) {
+    next(e)
+  }
+}
+
+function badgeSortRank(b) {
+  const verified = Boolean(b?.isVerified)
+  const featured = Boolean(b?.isFeatured)
+  if (verified && featured) return 4
+  if (verified) return 3
+  if (featured) return 2
+  return 1
+}
+
+function byOnboardedDesc(a, b) {
+  const ta = a.onboardingCompletedAt ? new Date(a.onboardingCompletedAt).getTime() : 0
+  const tb = b.onboardingCompletedAt ? new Date(b.onboardingCompletedAt).getTime() : 0
+  return tb - ta
+}
+
+/** GET /admin/users?role=USER — platform consumers (not business owners or super admins). */
+export async function listPlatformUsers(req, res, next) {
+  try {
+    const role = String(req.query.role || 'USER').trim().toUpperCase()
+    if (role !== 'USER') {
+      throw new HttpError(400, 'Only role=USER is supported')
+    }
+    const q = String(req.query.q || '').trim()
+    const filter = { role: 'USER' }
+    if (q) {
+      const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(esc, 'i')
+      filter.$or = [{ email: re }, { name: re }, { phone: re }]
+    }
+    const items = await User.find(filter).sort({ createdAt: -1 }).limit(500).lean()
+    res.json({
+      ok: true,
+      items: items.map((u) => ({
+        _id: u._id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone || '',
+        photoURL: u.photoURL || '',
+        isBlocked: Boolean(u.isBlocked),
+        createdAt: u.createdAt,
+      })),
+    })
   } catch (e) {
     next(e)
   }
@@ -276,6 +323,37 @@ export async function getBusinessAdminDetail(req, res, next) {
       .lean()
     if (!b) throw new HttpError(404, 'Business not found')
     res.json({ ok: true, item: b })
+  } catch (e) {
+    next(e)
+  }
+}
+
+/** PATCH /admin/users/:id/block — suspend a consumer (role USER) account. */
+export async function setConsumerBlocked(req, res, next) {
+  try {
+    const { isBlocked } = req.body
+    if (typeof isBlocked !== 'boolean') {
+      throw new HttpError(400, 'isBlocked must be a boolean')
+    }
+    const user = await User.findById(req.params.id).select('+refreshTokens')
+    if (!user) throw new HttpError(404, 'User not found')
+    if (user.role !== 'USER') {
+      throw new HttpError(400, 'Only consumer accounts can be blocked from this endpoint')
+    }
+    user.isBlocked = isBlocked
+    if (isBlocked) {
+      user.refreshTokens = []
+    }
+    await user.save()
+    res.json({
+      ok: true,
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        isBlocked: user.isBlocked,
+      },
+    })
   } catch (e) {
     next(e)
   }

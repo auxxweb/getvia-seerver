@@ -31,11 +31,12 @@ export async function uploadMediaDataUrl(req, res, next) {
     if (!dataUrl || typeof dataUrl !== 'string') {
       throw new HttpError(400, 'Missing dataUrl')
     }
-    const m = /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i.exec(dataUrl.trim())
+    const m = /^data:image\/[\w.+-]+;base64,(.+)$/i.exec(dataUrl.trim())
     if (!m) {
-      throw new HttpError(400, 'Expected a base64 data:image/png|jpeg|jpg|webp URL')
+      throw new HttpError(400, 'Expected a base64 data:image/… URL')
     }
-    const buf = Buffer.from(m[2], 'base64')
+    const base64Payload = m[1]
+    const buf = Buffer.from(base64Payload, 'base64')
     if (buf.length > 8 * 1024 * 1024) throw new HttpError(400, 'Image too large (max 8MB)')
 
     const replacePublicId =

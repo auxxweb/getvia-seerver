@@ -8,6 +8,7 @@ import {
   toCsvRowsPlatform,
   resolveDateRange,
 } from '../services/analytics/analyticsQuery.service.js'
+import { buildBusinessAnalyticsPdf } from '../services/analytics/businessAnalyticsPdf.js'
 
 const require = createRequire(import.meta.url)
 const XLSX = require('xlsx')
@@ -57,19 +58,15 @@ export async function exportBusinessAnalytics(req, res, next) {
       return res.send(buf)
     }
     if (format === 'pdf') {
-      const doc = new PDFDocument({ margin: 40 })
+      const preset = String(req.query.preset || 'last_30d')
+      const pdfBuffer = await buildBusinessAnalyticsPdf({
+        business: b,
+        dashboard: data,
+        preset,
+      })
       res.setHeader('Content-Type', 'application/pdf')
       res.setHeader('Content-Disposition', `attachment; filename="${base}.pdf"`)
-      doc.pipe(res)
-      doc.fontSize(16).text('Business analytics export', { underline: true })
-      doc.moveDown()
-      doc.fontSize(10).text(`Range: ${from} → ${to}`)
-      doc.moveDown()
-      for (const [k, v] of Object.entries(data.kpis || {})) {
-        doc.text(`${k}: ${v}`)
-      }
-      doc.end()
-      return
+      return res.send(pdfBuffer)
     }
     throw new HttpError(400, 'Unsupported format')
   } catch (e) {

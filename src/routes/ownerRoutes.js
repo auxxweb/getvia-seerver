@@ -7,6 +7,8 @@ import * as preview from '../controllers/previewController.js'
 import * as theme from '../controllers/themeController.js'
 import * as analyticsDash from '../controllers/analyticsDashboard.controller.js'
 import * as planUsage from '../controllers/planUsageController.js'
+import * as site from '../controllers/siteContentController.js'
+import * as enquiries from '../controllers/businessEnquiryController.js'
 
 const r = Router()
 r.use(authenticate(true))
@@ -37,5 +39,9 @@ r.get('/business/:id/plan-usage', planUsage.getBusinessPlanUsage)
 r.get('/business/:id/analytics/insights', planUsage.getBusinessAnalyticsInsights)
 
 r.post('/ai/generate', ai.aiGenerate)
+r.get('/support', site.listOwnerSupportMessages)
+r.post('/support', site.submitOwnerSupportMessage)
+r.get('/business/:id/enquiries', enquiries.listOwnerEnquiries)
+r.patch('/business/:id/enquiries/:enquiryId', enquiries.patchOwnerEnquiry)
 
 export default r

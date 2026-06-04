@@ -75,6 +75,16 @@ export function createApp() {
     legacyHeaders: false,
   }))
 
+  const publicWriteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: isProd ? 20 : 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'Too many submissions. Try again later.' },
+  })
+  app.use('/api/business/:publicId/enquiries', publicWriteLimiter)
+  app.use('/api/site/support', publicWriteLimiter)
+
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true })
   })

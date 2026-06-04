@@ -17,7 +17,7 @@ function cookieOpts() {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: refreshCookieMaxAgeMs(),
     path: '/',
   }
 }
@@ -30,13 +30,29 @@ function refreshTokenSecret() {
   return process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
 }
 
-/** Firebase login: longer-lived access token (default 7d) unless overridden. */
-function firebaseAccessExpires() {
-  return process.env.FIREBASE_JWT_EXPIRES || process.env.JWT_EXPIRES_IN || '7d'
+/** Access token TTL — minimum practical default 7 days (override via JWT_ACCESS_EXPIRES). */
+function accessTokenExpires() {
+  return (
+    process.env.JWT_ACCESS_EXPIRES?.trim() ||
+    process.env.FIREBASE_JWT_EXPIRES?.trim() ||
+    process.env.JWT_EXPIRES_IN?.trim() ||
+    '7d'
+  )
 }
 
-function defaultAccessExpires() {
-  return process.env.JWT_ACCESS_EXPIRES || '15m'
+function refreshTokenExpires() {
+  return process.env.JWT_REFRESH_EXPIRES?.trim() || '7d'
+}
+
+function refreshCookieMaxAgeMs() {
+  const exp = refreshTokenExpires()
+  const m = /^(\d+)([dhms])$/i.exec(exp)
+  if (!m) return 7 * 24 * 60 * 60 * 1000
+  const n = Number(m[1])
+  const unit = m[2].toLowerCase()
+  const mult =
+    unit === 'd' ? 86400000 : unit === 'h' ? 3600000 : unit === 'm' ? 60000 : 1000
+  return n * mult
 }
 
 export async function register(req, res, next) {
@@ -57,7 +73,7 @@ export async function register(req, res, next) {
       phone: phone || '',
       role: 'USER',
     })
-    const tokens = await issueTokens(user, defaultAccessExpires())
+    const tokens = await issueTokens(user, accessTokenExpires())
     res.cookie(COOKIE_NAME, tokens.refreshToken, cookieOpts())
     res.status(201).json({
       ok: true,
@@ -86,7 +102,7 @@ export async function registerBusinessOwner(req, res, next) {
       phone: phone || '',
       role: 'BUSINESS_OWNER',
     })
-    const tokens = await issueTokens(user, defaultAccessExpires())
+    const tokens = await issueTokens(user, accessTokenExpires())
     res.cookie(COOKIE_NAME, tokens.refreshToken, cookieOpts())
     res.status(201).json({
       ok: true,
@@ -107,13 +123,18 @@ export async function login(req, res, next) {
     if (!user || !(await user.comparePassword(password))) {
       throw new HttpError(401, 'Invalid credentials')
     }
-    if (user.isBlocked && user.role === 'BUSINESS_OWNER') {
-      throw new HttpError(403, 'Your business account has been suspended.')
+    if (user.isBlocked) {
+      if (user.role === 'BUSINESS_OWNER') {
+        throw new HttpError(403, 'Your business account has been suspended.')
+      }
+      if (user.role === 'USER') {
+        throw new HttpError(403, 'Your account has been suspended.')
+      }
     }
     if (expectedRole && user.role !== expectedRole) {
       throw new HttpError(403, 'Role mismatch for this login')
     }
-    const tokens = await issueTokens(user, defaultAccessExpires())
+    const tokens = await issueTokens(user, accessTokenExpires())
     res.cookie(COOKIE_NAME, tokens.refreshToken, cookieOpts())
     res.json({
       ok: true,
@@ -140,7 +161,14 @@ export async function refresh(req, res, next) {
     const h = hashToken(raw)
     const match = user.refreshTokens.some((t) => t.tokenHash === h && t.expiresAt > new Date())
     if (!match) throw new HttpError(401, 'Refresh token revoked')
-    const tokens = await issueTokens(user, defaultAccessExpires())
+    if (user.isBlocked && user.role !== 'SUPER_ADMIN') {
+      const msg =
+        user.role === 'BUSINESS_OWNER'
+          ? 'Your business account has been suspended.'
+          : 'Your account has been suspended.'
+      throw new HttpError(403, msg)
+    }
+    const tokens = await issueTokens(user, accessTokenExpires())
     res.cookie(COOKIE_NAME, tokens.refreshToken, cookieOpts())
     res.json({
       ok: true,
@@ -149,6 +177,7 @@ export async function refresh(req, res, next) {
       expiresIn: tokens.expiresIn,
     })
   } catch (e) {
+    if (e instanceof HttpError) return next(e)
     next(new HttpError(401, 'Invalid refresh token'))
   }
 }
@@ -237,11 +266,16 @@ export async function firebaseLogin(req, res, next) {
       throw new HttpError(500, `Could not create or update user${hint}`)
     }
 
-    if (user.isBlocked && user.role === 'BUSINESS_OWNER') {
-      throw new HttpError(403, 'Your business account has been suspended.')
+    if (user.isBlocked) {
+      if (user.role === 'BUSINESS_OWNER') {
+        throw new HttpError(403, 'Your business account has been suspended.')
+      }
+      if (user.role === 'USER') {
+        throw new HttpError(403, 'Your account has been suspended.')
+      }
     }
 
-    const tokens = await issueTokens(user, firebaseAccessExpires())
+    const tokens = await issueTokens(user, accessTokenExpires())
     res.cookie(COOKIE_NAME, tokens.refreshToken, cookieOpts())
     res.setHeader('X-Getvia-Firebase-Login', 'v3-json-or-env')
     res.json({
@@ -258,14 +292,14 @@ export async function firebaseLogin(req, res, next) {
   }
 }
 
-async function issueTokens(user, accessExpOverride) {
+export async function issueTokens(user, accessExpOverride) {
   const accessSecret = accessTokenSecret()
   const refreshSecret = refreshTokenSecret()
   if (!accessSecret || !refreshSecret) {
     throw new HttpError(500, 'JWT_SECRET (or JWT_ACCESS_SECRET + JWT_REFRESH_SECRET) is not configured')
   }
-  const accessExp = accessExpOverride || defaultAccessExpires()
-  const refreshExp = process.env.JWT_REFRESH_EXPIRES || '7d'
+  const accessExp = accessExpOverride || accessTokenExpires()
+  const refreshExp = refreshTokenExpires()
 
   const payload = { sub: user._id.toString(), role: user.role }
   const accessToken = signAccessToken(payload, accessSecret, accessExp)
