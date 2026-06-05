@@ -119,7 +119,8 @@ export async function registerBusinessOwner(req, res, next) {
 export async function login(req, res, next) {
   try {
     const { email, password, expectedRole } = req.body
-    const user = await User.findOne({ email }).select('+password')
+    const normalizedEmail = String(email || '').toLowerCase().trim()
+    const user = await User.findOne({ email: normalizedEmail }).select('+password')
     if (!user || !(await user.comparePassword(password))) {
       throw new HttpError(401, 'Invalid credentials')
     }
@@ -233,13 +234,16 @@ export async function firebaseLogin(req, res, next) {
     const registerAsBusinessOwner = Boolean(req.body?.registerAsBusinessOwner)
     const loginOnly = Boolean(req.body?.loginOnly)
     const expectedRole = req.body?.expectedRole ? String(req.body.expectedRole).trim() : ''
+    const rawPassword = typeof req.body?.password === 'string' ? req.body.password : ''
+    const password = rawPassword.length >= 8 ? rawPassword : undefined
 
     let user
     try {
       const result = loginOnly
-        ? await authService.loginUserFromFirebase(decoded, { expectedRole })
+        ? await authService.loginUserFromFirebase(decoded, { expectedRole, password })
         : await authService.findOrCreateUserFromFirebase(decoded, {
             registerAsBusinessOwner,
+            password,
           })
       user = result.user
     } catch (e) {

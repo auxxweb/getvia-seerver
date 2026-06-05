@@ -9,6 +9,13 @@ import { User } from '../models/user.model.js'
 
 const debug = () => process.env.DEBUG_AUTH === '1' || process.env.DEBUG_AUTH === 'true'
 
+/** Store bcrypt password on business owners when provided (Firebase email/password signup). */
+function applyOwnerPasswordIfValid(user, password) {
+  if (!password || String(password).length < 8) return
+  if (user.role !== 'BUSINESS_OWNER') return
+  user.password = password
+}
+
 /**
  * @param {string} token - Firebase ID token
  * @returns {Promise<import('firebase-admin/auth').DecodedIdToken>}
@@ -37,10 +44,11 @@ export async function verifyFirebaseToken(token) {
 
 /**
  * @param {import('firebase-admin/auth').DecodedIdToken} decoded
- * @param {{ registerAsBusinessOwner?: boolean }} [options]
+ * @param {{ registerAsBusinessOwner?: boolean, password?: string }} [options]
  */
 export async function findOrCreateUserFromFirebase(decoded, options = {}) {
   const registerAsBusinessOwner = Boolean(options.registerAsBusinessOwner)
+  const password = options.password ? String(options.password) : ''
   const uid = decoded.uid
   const phone = decoded.phone_number ? String(decoded.phone_number) : ''
   const emailFromToken = decoded.email ? String(decoded.email).toLowerCase().trim() : ''
@@ -77,6 +85,7 @@ export async function findOrCreateUserFromFirebase(decoded, options = {}) {
       if (phone) user.phone = phone
       if (emailFromToken) user.email = emailFromToken
       if (picture) user.photoURL = picture
+      applyOwnerPasswordIfValid(user, password)
       await user.save()
       if (debug()) console.log('[auth.service] Updated business owner', user._id.toString())
       return { user, created: false }
@@ -97,19 +106,22 @@ export async function findOrCreateUserFromFirebase(decoded, options = {}) {
     if (phone) user.phone = phone
     if (emailFromToken) user.email = emailFromToken
     if (picture) user.photoURL = picture
+    if (registerAsBusinessOwner) applyOwnerPasswordIfValid(user, password)
     await user.save()
     if (debug()) console.log('[auth.service] Updated user', user._id.toString())
     return { user, created: false }
   }
 
-  user = await User.create({
+  const createPayload = {
     firebaseUid: uid,
     name,
     email,
     phone,
     photoURL: picture,
     role: registerAsBusinessOwner ? 'BUSINESS_OWNER' : 'USER',
-  })
+  }
+  if (registerAsBusinessOwner && password.length >= 8) createPayload.password = password
+  user = await User.create(createPayload)
   if (debug()) console.log('[auth.service] Created user', user._id.toString())
   return { user, created: true }
 }
@@ -117,10 +129,11 @@ export async function findOrCreateUserFromFirebase(decoded, options = {}) {
 /**
  * Sign-in only: resolve an existing user from Firebase — never create.
  * @param {import('firebase-admin/auth').DecodedIdToken} decoded
- * @param {{ expectedRole?: string }} [options]
+ * @param {{ expectedRole?: string, password?: string }} [options]
  */
 export async function loginUserFromFirebase(decoded, options = {}) {
   const expectedRole = options.expectedRole ? String(options.expectedRole).trim() : ''
+  const password = options.password ? String(options.password) : ''
   const uid = decoded.uid
   const phone = decoded.phone_number ? String(decoded.phone_number) : ''
   const emailFromToken = decoded.email ? String(decoded.email).toLowerCase().trim() : ''
@@ -170,6 +183,7 @@ export async function loginUserFromFirebase(decoded, options = {}) {
   if (phone) user.phone = phone
   if (emailFromToken) user.email = emailFromToken
   if (picture) user.photoURL = picture
+  applyOwnerPasswordIfValid(user, password)
   await user.save()
   if (debug()) console.log('[auth.service] Login-only Firebase OK', user._id.toString(), user.role)
   return { user, created: false }
