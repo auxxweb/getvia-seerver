@@ -26,7 +26,7 @@ const thisServerDir = path.dirname(fileURLToPath(import.meta.url))
 
 
 
-const port = Number(process.env.PORT) || 5000
+const port = Number(process.env.PORT) || 5001
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -156,7 +156,20 @@ const server = app.listen(port, () => {
 
 })
 
-
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `\n[getvia-api] Port ${port} is already in use.`,
+    )
+    console.error(
+      '  On macOS, port 5000 is often taken by AirPlay Receiver (System Settings → AirDrop & Handoff).',
+    )
+    console.error('  Set PORT=5001 in server/.env and restart.\n')
+  } else {
+    console.error('[getvia-api] Server error:', err.message)
+  }
+  process.exit(1)
+})
 
 let shuttingDown = false
 
