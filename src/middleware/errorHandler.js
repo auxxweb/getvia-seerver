@@ -1,4 +1,8 @@
+import { applyCorsHeaders } from '../lib/corsOrigins.js'
+
 export function errorHandler(err, req, res, _next) {
+  applyCorsHeaders(req, res)
+
   const status = err.status || err.statusCode || 500
   let message = err.message || 'Internal Server Error'
   if (process.env.NODE_ENV === 'production' && status >= 500) {

@@ -2,7 +2,7 @@ import multer from 'multer'
 import { isAllowedImageUpload } from '../src/constants/imageUpload.js'
 import { HttpError } from '../src/middleware/errorHandler.js'
 
-const MAX_BYTES = Number(process.env.UPLOAD_MAX_IMAGE_BYTES || 2 * 1024 * 1024)
+const MAX_BYTES = Number(process.env.UPLOAD_MAX_IMAGE_BYTES || 10 * 1024 * 1024)
 
 const storage = multer.memoryStorage()
 

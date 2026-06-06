@@ -13,6 +13,7 @@ import userRoutes from './src/routes/userRoutes.js'
 import uploadRoutes from './routes/upload.routes.js'
 import paymentRoutes from './src/routes/paymentRoutes.js'
 import analyticsRoutes from './src/routes/analyticsRoutes.js'
+import { getClientOrigins } from './src/lib/corsOrigins.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 import { configureCloudinary } from './config/cloudinary.js'
 import { LEGACY_UPLOADS_DIR } from './src/services/legacyImageUrls.service.js'
@@ -27,10 +28,7 @@ export function createApp() {
     app.set('trust proxy', 1)
   }
 
-  const origins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const origins = getClientOrigins()
 
   app.use(
     cors({
