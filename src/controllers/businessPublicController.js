@@ -12,6 +12,11 @@ import {
   prepareBusinessMediaForResponse,
 } from '../services/legacyImageUrls.service.js'
 import { discoverBusinesses as runDiscoverBusinesses } from '../services/businessDiscover.service.js'
+import {
+  buildParentCategoryMatch,
+  buildStrictCategoryClauses,
+  buildSubcategoryCountMatch,
+} from '../services/categoryBusinessFilter.service.js'
 
 function parseFiniteNumber(value) {
   const n = typeof value === 'number' ? value : Number(String(value))
@@ -32,10 +37,6 @@ async function publicMatch() {
 
 function isLikelyMongoObjectId(id) {
   return typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)
-}
-
-function escapeRegex(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function normalizeSubcategory(s) {
@@ -76,12 +77,9 @@ export async function listPublicCategories(req, res, next) {
 
     const itemsOut = await Promise.all(
       items.map(async (c) => {
-        const nameEsc = escapeRegex(c.name || '')
-        const parentOr = {
-          $or: [{ categoryId: c._id }, { category: new RegExp(nameEsc, 'i') }],
-        }
+        const parentMatch = buildParentCategoryMatch(c._id, c.name || '')
 
-        const listingCount = await Business.countDocuments({ ...base, ...parentOr })
+        const listingCount = await Business.countDocuments({ ...base, ...parentMatch })
 
         const subcategories = await Promise.all(
           (c.subcategories || []).map(async (raw) => {
@@ -91,7 +89,7 @@ export async function listPublicCategories(req, res, next) {
             if (st) {
               subListingCount = await Business.countDocuments({
                 ...base,
-                $and: [parentOr, { subcategory: new RegExp(escapeRegex(st), 'i') }],
+                ...buildSubcategoryCountMatch(parentMatch, st),
               })
             }
             return { ...s, listingCount: subListingCount }
@@ -139,26 +137,11 @@ export async function searchBusinesses(req, res, next) {
     const { q, category, categoryId, subcategory, limit = 24, skip = 0 } = req.query
 
     const base = await publicMatch()
-    const extraClauses = []
-    if (categoryId && isLikelyMongoObjectId(String(categoryId))) {
-      const cat = await Category.findById(String(categoryId)).lean()
-      if (cat?.name) {
-        const esc = escapeRegex(cat.name)
-        extraClauses.push({
-          $or: [
-            { categoryId: new mongoose.Types.ObjectId(String(categoryId)) },
-            { category: new RegExp(esc, 'i') },
-          ],
-        })
-      }
-    } else if (category) {
-      extraClauses.push({ category: new RegExp(escapeRegex(String(category)), 'i') })
-    }
-    if (subcategory) {
-      extraClauses.push({
-        subcategory: new RegExp(escapeRegex(String(subcategory)), 'i'),
-      })
-    }
+    const extraClauses = await buildStrictCategoryClauses({
+      categoryId,
+      category,
+      subcategory,
+    })
 
     const qStr = q ? String(q).trim() : ''
     const lim = Math.min(Math.max(Number(limit) || 24, 1), 100)

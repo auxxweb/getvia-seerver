@@ -1,7 +1,6 @@
-import mongoose from 'mongoose'
 import { Business } from '../models/Business.js'
-import { Category } from '../models/Category.js'
 import { User } from '../models/User.js'
+import { buildStrictCategoryClauses } from './categoryBusinessFilter.service.js'
 
 /** Circular search: local first, then widen (nearest → farthest). */
 const RADIUS_STEPS_M = [2_000, 5_000, 10_000, 25_000, 50_000, 100_000, 200_000]
@@ -19,10 +18,6 @@ function clampNumber(n, min, max) {
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function isLikelyMongoObjectId(id) {
-  return typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)
 }
 
 /** "stays" → also match "stay"; multi-word queries match any word. */
@@ -53,32 +48,8 @@ async function publicMatch() {
   }
 }
 
-async function buildCategoryClauses({ categoryId, category, subcategory }) {
-  const extraClauses = []
-  if (categoryId && isLikelyMongoObjectId(String(categoryId))) {
-    const cat = await Category.findById(String(categoryId)).lean()
-    if (cat?.name) {
-      const esc = escapeRegex(cat.name)
-      extraClauses.push({
-        $or: [
-          { categoryId: new mongoose.Types.ObjectId(String(categoryId)) },
-          { category: new RegExp(esc, 'i') },
-        ],
-      })
-    }
-  } else if (category) {
-    extraClauses.push({ category: new RegExp(escapeRegex(String(category)), 'i') })
-  }
-  if (subcategory) {
-    extraClauses.push({
-      subcategory: new RegExp(escapeRegex(String(subcategory)), 'i'),
-    })
-  }
-  return extraClauses
-}
-
-/** Match name, category, subcategory, description, city, address (any search term). */
-function buildTextFilter(qStr) {
+/** Match name, description, city, address (any search term). */
+function buildTextFilter(qStr, { excludeCategoryFields = false } = {}) {
   const terms = searchTermsForQuery(qStr)
   if (!terms.length) return null
 
@@ -86,10 +57,11 @@ function buildTextFilter(qStr) {
   for (const term of terms) {
     const esc = escapeRegex(term)
     const re = new RegExp(esc, 'i')
+    fieldExprs.push({ name: re })
+    if (!excludeCategoryFields) {
+      fieldExprs.push({ category: re }, { subcategory: re })
+    }
     fieldExprs.push(
-      { name: re },
-      { category: re },
-      { subcategory: re },
       { description: re },
       { city: re },
       { formattedAddress: re },
@@ -305,13 +277,14 @@ export async function discoverBusinesses(query) {
   const expandRadius = query.expand !== '0' && query.expand !== 'false'
 
   const match = await publicMatch()
-  const categoryClauses = await buildCategoryClauses({
+  const categoryClauses = await buildStrictCategoryClauses({
     categoryId: query.categoryId,
     category: query.category,
     subcategory: query.subcategory,
   })
 
-  const textFilter = buildTextFilter(qStr)
+  const hasCategoryScope = Boolean(query.categoryId || query.category || query.subcategory)
+  const textFilter = buildTextFilter(qStr, { excludeCategoryFields: hasCategoryScope })
   const combinedMatch = { ...match }
   if (categoryClauses.length === 1) {
     Object.assign(combinedMatch, categoryClauses[0])
