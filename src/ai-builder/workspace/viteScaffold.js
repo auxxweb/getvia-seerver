@@ -39,10 +39,12 @@ import react from '@vitejs/plugin-react'
 const port = Number(process.env.GETVIA_PREVIEW_PORT || 5179)
 const apiOrigin = process.env.GETVIA_API_ORIGIN || ${target}
 const previewBase = process.env.GETVIA_PREVIEW_BASE || '/'
+const buildOutDir = process.env.GETVIA_BUILD_OUTDIR || 'dist'
 const enableHmr = process.env.GETVIA_PREVIEW_HMR === '1'
 
 export default defineConfig({
   base: previewBase.endsWith('/') ? previewBase : \`\${previewBase}/\`,
+  build: { outDir: buildOutDir, emptyOutDir: true },
   plugins: [react()],
   server: {
     host: '127.0.0.1',

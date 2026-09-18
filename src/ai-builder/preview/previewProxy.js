@@ -3,6 +3,18 @@ import zlib from 'node:zlib'
 import { getIsolatedPreview } from '../preview/previewManager.js'
 
 const PREVIEW_PREFIX = '/ai-preview'
+const LIVE_PREFIX = '/ai-live'
+
+export function liveBasePath(projectId) {
+  return `${LIVE_PREFIX}/${encodeURIComponent(String(projectId || ''))}`
+}
+
+/** Map /ai-live/:id/ asset URLs to /ai-preview/:id/ (legacy poisoned dist after publish). */
+export function normalizeLivePathsForPreview(text, projectId) {
+  const live = liveBasePath(projectId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const preview = publicPreviewBasePath(projectId).replace(/\/$/, '')
+  return String(text || '').replace(new RegExp(live, 'g'), preview)
+}
 
 export function publicPreviewBasePath(projectId) {
   return `${PREVIEW_PREFIX}/${encodeURIComponent(String(projectId || ''))}/`
@@ -45,12 +57,23 @@ export function publicIsolatedPreviewUrl(projectId, { port, localUrl } = {}) {
 export function stripPreviewPrefix(pathOnly, projectId) {
   const raw = String(pathOnly || '/').split('?')[0] || '/'
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
-  if (raw === prefix || raw === `${prefix}/`) return '/'
-  if (raw.startsWith(`${prefix}/`)) {
-    const rest = raw.slice(prefix.length)
-    return rest.startsWith('/') ? rest : `/${rest}`
+  let rest
+  if (raw === prefix || raw === `${prefix}/`) rest = '/'
+  else if (raw.startsWith(`${prefix}/`)) {
+    rest = raw.slice(prefix.length)
+    rest = rest.startsWith('/') ? rest : `/${rest}`
+  } else {
+    rest = raw.startsWith('/') ? raw : `/${raw}`
   }
-  return raw.startsWith('/') ? raw : `/${raw}`
+
+  // Nested /ai-preview/:id/ai-live/:id/... from a poisoned publish dist.
+  const livePrefix = liveBasePath(projectId)
+  if (rest === livePrefix || rest === `${livePrefix}/`) return '/'
+  if (rest.startsWith(`${livePrefix}/`)) {
+    const after = rest.slice(livePrefix.length)
+    return after.startsWith('/') ? after : `/${after}`
+  }
+  return rest
 }
 
 function rewriteLocationHeader(location, { port, projectId, publicOrigin }) {
@@ -91,7 +114,7 @@ function isRewritableModuleType(value) {
 export function prefixRootAbsolutePaths(text, projectId) {
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  let out = String(text || '')
+  let out = normalizeLivePathsForPreview(text, projectId)
 
   // HTML src/href="/..."
   out = out.replace(/(src|href)=(["'])(\/[^"']*)\2/gi, (full, attr, quote, path) => {
@@ -163,7 +186,7 @@ const HMR_GUARD_SCRIPT = `<script data-getvia-hmr-guard>
 
 export function rewriteHtmlForPreviewBase(html, projectId) {
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
-  let out = String(html || '')
+  let out = normalizeLivePathsForPreview(html, projectId)
   out = out.replace(/<base\b[^>]*>/gi, '')
   out = out.replace(/<script data-getvia-hmr-guard>[\s\S]*?<\/script>/gi, '')
   out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}/">${HMR_GUARD_SCRIPT}`)

@@ -9,8 +9,10 @@ import { isHostPreviewAllowed } from '../runtimeFlags.js'
 import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
 import { writePreviewViteConfig } from '../workspace/viteScaffold.js'
 import { inspectWorkspaceBuild } from '../validation/isolatedBuild.js'
+import { runWorkspaceCommand } from '../workspace/runCommand.js'
 import { publicIsolatedPreviewUrl, shouldUsePublicPreviewProxy } from './previewProxy.js'
 import { getPublicSiteOrigin } from '../constants.js'
+import { getPublicApiOrigin } from '../getvia/publicApi.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -57,6 +59,25 @@ export function previewPortFromUrl(url) {
 export async function isPreviewListening(port) {
   if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) return false
   return !(await portFree(port))
+}
+
+/** Rebuild workspace dist with base "/" when publish left /ai-live/ paths in dist. */
+async function ensurePreviewSafeDist(workspaceDir) {
+  const distIndex = path.join(workspaceDir, 'dist', 'index.html')
+  try {
+    const html = await fs.readFile(distIndex, 'utf8')
+    if (!/\/ai-live\/[a-f0-9]+\//i.test(html)) return { ok: true, rebuilt: false }
+  } catch {
+    return { ok: true, rebuilt: false }
+  }
+  await writePreviewViteConfig(workspaceDir, { apiOrigin: getPublicApiOrigin() }).catch(() => null)
+  const result = await runWorkspaceCommand({
+    cwd: workspaceDir,
+    command: 'npm run build',
+    extraEnv: { GETVIA_PREVIEW_BASE: '/', GETVIA_BUILD_OUTDIR: 'dist' },
+    timeoutMs: 4 * 60 * 1000,
+  })
+  return { ...result, rebuilt: true }
 }
 
 function killProcessTree(child, signal = 'SIGTERM') {
@@ -195,7 +216,17 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
       const built = await inspectWorkspaceBuild({ workspaceDir, runBuild: true })
       hasDist = Boolean(built?.ok)
     }
-    if (hasDist) command = 'npm run preview'
+    if (hasDist) {
+      const safe = await ensurePreviewSafeDist(workspaceDir)
+      if (!safe.ok && safe.rebuilt) {
+        return {
+          ok: false,
+          code: safe.code || 'BUILD_FAILED',
+          message: safe.message || 'Could not rebuild preview dist.',
+        }
+      }
+      command = 'npm run preview'
+    }
   }
   const allowed = assertAllowedCommand(command)
   if (!allowed.ok) return allowed

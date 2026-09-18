@@ -95,7 +95,12 @@ test('scaffold contact form posts enquiries through the public client', async ()
 })
 
 test('preview proxy rewrites assets and disables Vite HMR websockets', async () => {
-  const { rewriteHtmlForPreviewBase, disableViteHmrClient, stripPreviewPrefix } = await import('../preview/previewProxy.js')
+  const {
+    rewriteHtmlForPreviewBase,
+    disableViteHmrClient,
+    stripPreviewPrefix,
+    normalizeLivePathsForPreview,
+  } = await import('../preview/previewProxy.js')
   const id = '6aad68fbf20d26ab1da6c441'
   const html = rewriteHtmlForPreviewBase(
     '<!doctype html><html><head></head><body><script type="module" src="/@vite/client"></script></body></html>',
@@ -107,6 +112,20 @@ test('preview proxy rewrites assets and disables Vite HMR websockets', async () 
   const js = disableViteHmrClient('const ws = new WebSocket(socketUrl); // hmrClient')
   assert.doesNotMatch(js, /new WebSocket\(/)
   assert.equal(stripPreviewPrefix(`/ai-preview/${id}/@vite/client`, id), '/@vite/client')
+  const poisoned = rewriteHtmlForPreviewBase(
+    `<!doctype html><html><head><link rel="stylesheet" href="/ai-live/${id}/assets/index.css"></head><body></body></html>`,
+    id,
+  )
+  assert.match(poisoned, /href="\/ai-preview\/6aad68fbf20d26ab1da6c441\/assets\/index\.css"/)
+  assert.doesNotMatch(poisoned, /\/ai-preview\/.*\/ai-live\//)
+  assert.equal(
+    stripPreviewPrefix(`/ai-preview/${id}/ai-live/${id}/assets/index.css`, id),
+    '/assets/index.css',
+  )
+  assert.equal(
+    normalizeLivePathsForPreview(`/ai-live/${id}/assets/foo.js`, id),
+    `/ai-preview/${id}/assets/foo.js`,
+  )
 })
 
 test('enquiry prompts stay on the contact form and public client', () => {

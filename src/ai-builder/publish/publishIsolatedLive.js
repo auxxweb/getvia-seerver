@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { inspectWorkspaceBuild } from '../validation/isolatedBuild.js'
 import { workspacePathFor, ensureWorkspace } from '../workspace/workspaceManager.js'
 import { workspaceHasSite, writePreviewViteConfig } from '../workspace/viteScaffold.js'
 import { restoreIsolatedSnapshot } from '../workspace/persistIsolatedDraft.js'
@@ -68,19 +67,24 @@ export async function publishIsolatedLiveSite({ user, site, draft } = {}) {
   const liveBase = publishedLiveBasePath(siteId)
   await writePreviewViteConfig(loc.dir, { apiOrigin: getPublicApiOrigin() }).catch(() => null)
 
-  // Always rebuild with the public /ai-live/:id/ base so assets resolve in the iframe.
+  const outDir = path.join(publishRootDir(), siteId)
+  const stagingDir = path.join(publishRootDir(), '_staging', siteId)
+  await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => null)
+
+  // Build into staging with /ai-live/:id/ base. Do not overwrite workspace dist (preview uses base "/").
   const build = await runWorkspaceCommand({
     cwd: loc.dir,
     command: 'npm run build',
     extraEnv: {
       GETVIA_PREVIEW_BASE: liveBase,
+      GETVIA_BUILD_OUTDIR: stagingDir,
       GETVIA_API_ORIGIN: getPublicApiOrigin(),
     },
     timeoutMs: 4 * 60 * 1000,
   })
   if (!build.ok) {
     try {
-      await fs.access(path.join(loc.dir, 'dist', 'index.html'))
+      await fs.access(path.join(stagingDir, 'index.html'))
     } catch {
       return {
         ok: false,
@@ -90,10 +94,10 @@ export async function publishIsolatedLiveSite({ user, site, draft } = {}) {
     }
   }
 
-  const distDir = path.join(loc.dir, 'dist')
-  const outDir = path.join(publishRootDir(), siteId)
+  const distDir = stagingDir
   await fs.rm(outDir, { recursive: true, force: true }).catch(() => null)
   await copyDir(distDir, outDir)
+  await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => null)
 
   const indexPath = path.join(outDir, 'index.html')
   try {
