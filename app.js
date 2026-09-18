@@ -65,6 +65,16 @@ export function createApp() {
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+      // AI preview iframes on business.getvia.in need to embed /ai-preview/* from the API host.
+      // frame-ancestors is set per-response on the preview proxy instead.
+      xFrameOptions: false,
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'upgrade-insecure-requests': null,
+          'frame-ancestors': ["'self'", 'https://business.getvia.in', 'https://admin.getvia.in', 'http://localhost:5175'],
+        },
+      },
       ...(isProd ? { hsts: { maxAge: 31536000, includeSubDomains: true, preload: true } } : {}),
     }),
   )

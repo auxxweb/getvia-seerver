@@ -35,6 +35,13 @@ import { reviveIsolatedPreview } from '../ai-builder/preview/ensurePreview.js'
 function serializeSite(site, draft, extra = {}) {
   const origin = getPublicSiteOrigin()
   const project = projectMetaFrom(site, draft)
+  const publicId = extra.publicId || ''
+  let liveUrl = publicId ? `${origin}${PUBLIC_PROFILE_PATH(publicId)}` : extra.publicUrl || null
+  // Never surface localhost live links from a mixed CLIENT_ORIGINS / stale publicUrl.
+  if (liveUrl && /localhost|127\.0\.0\.1/i.test(liveUrl) && publicId) {
+    liveUrl = `https://getvia.in${PUBLIC_PROFILE_PATH(publicId)}`
+  }
+  const { publicId: _pid, publicUrl: _purl, isolatedPreviewUrl: extraPreview, ...restExtra } = extra
   return {
     siteId: String(site._id),
     businessId: String(site.businessId),
@@ -47,13 +54,14 @@ function serializeSite(site, draft, extra = {}) {
     publishedVersionId: site.publishedVersionId ? String(site.publishedVersionId) : null,
     draftRevision: draft?.revisionNumber ?? null,
     lastPublishedAt: site.lastPublishedAt,
-    liveUrl: extra.publicId ? `${origin}${PUBLIC_PROFILE_PATH(extra.publicId)}` : extra.publicUrl || null,
+    liveUrl,
+    publicId: publicId || null,
     websiteState: draft?.websiteState || null,
-    isolatedPreviewUrl: draft?.isolatedPreviewUrl || extra.isolatedPreviewUrl || null,
+    isolatedPreviewUrl: draft?.isolatedPreviewUrl || extraPreview || null,
     isolatedSavedAt: draft?.isolatedSnapshot?.savedAt || null,
     unresolvedQuestions: draft?.unresolvedQuestions || [],
     mutatingJobId: draft?.mutatingJobId ? String(draft.mutatingJobId) : null,
-    ...extra,
+    ...restExtra,
   }
 }
 

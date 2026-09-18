@@ -6,7 +6,8 @@ import { sanitizedWorkspaceEnv } from '../security/workspaceEnv.js'
 import { isHostPreviewAllowed } from '../runtimeFlags.js'
 import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
 import { writePreviewViteConfig } from '../workspace/viteScaffold.js'
-import { publicIsolatedPreviewUrl, publicPreviewBasePath, shouldUsePublicPreviewProxy } from './previewProxy.js'
+import { publicIsolatedPreviewUrl, shouldUsePublicPreviewProxy } from './previewProxy.js'
+import { getPublicSiteOrigin } from '../constants.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -189,7 +190,9 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
       `http://127.0.0.1:${process.env.PORT || 5001}`,
   ).replace(/\/$/, '')
   const usePublicProxy = shouldUsePublicPreviewProxy()
-  const previewBase = usePublicProxy ? publicPreviewBasePath(projectId) : '/'
+  // Always base "/" behind the public proxy — the proxy strips /ai-preview/:id.
+  // Subpath base caused ERR_TOO_MANY_REDIRECTS with Vite.
+  const previewBase = '/'
   await writePreviewViteConfig(workspaceDir, { apiOrigin }).catch(() => null)
 
   const child = spawn(allowed.argv[0], allowed.argv.slice(1), {
@@ -199,6 +202,7 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
       GETVIA_PREVIEW_PORT: String(port),
       GETVIA_PREVIEW_BASE: previewBase,
       GETVIA_PREVIEW_HMR: usePublicProxy ? '0' : '1',
+      GETVIA_PREVIEW_ORIGIN: '',
       GETVIA_API_ORIGIN: apiOrigin,
       npm_config_update_notifier: 'false',
     },
@@ -232,7 +236,10 @@ export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, pr
   if (workspaceDir) await repairWorkspaceJsx(workspaceDir)
   const key = String(projectId || '')
   const current = previews.get(key)
-  if (current?.port && (await isPreviewListening(current.port))) {
+  // Behind the public proxy, always restart so Vite runs with base "/" (avoids redirect loops
+  // from older processes that used /ai-preview/:id as Vite base).
+  const forceRestart = shouldUsePublicPreviewProxy()
+  if (!forceRestart && current?.port && (await isPreviewListening(current.port))) {
     const url =
       publicIsolatedPreviewUrl(key, { port: current.port, localUrl: current.localUrl || current.url }) ||
       current.url
@@ -240,18 +247,22 @@ export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, pr
     return { ok: true, url, port: current.port, host: current.host || '127.0.0.1', reused: true }
   }
   if (current) await stopIsolatedPreview(key)
-  const orphanPort = Number(preferredPort)
-  if (Number.isInteger(orphanPort) && (await isPreviewListening(orphanPort))) {
-    const localUrl = `http://127.0.0.1:${orphanPort}/`
-    const url = publicIsolatedPreviewUrl(key, { port: orphanPort, localUrl }) || localUrl
-    previews.set(key, { projectId: key, port: orphanPort, url, localUrl, child: null, startedAt: Date.now() })
-    return { ok: true, url, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
+  if (!forceRestart) {
+    const orphanPort = Number(preferredPort)
+    if (Number.isInteger(orphanPort) && (await isPreviewListening(orphanPort))) {
+      const localUrl = `http://127.0.0.1:${orphanPort}/`
+      const url = publicIsolatedPreviewUrl(key, { port: orphanPort, localUrl }) || localUrl
+      previews.set(key, { projectId: key, port: orphanPort, url, localUrl, child: null, startedAt: Date.now() })
+      return { ok: true, url, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
+    }
+  } else if (preferredPort) {
+    await killListenerOnPort(Number(preferredPort)).catch(() => null)
   }
   return startIsolatedPreviewProcess({ projectId, workspaceDir })
 }
 
 export function getViaPreviewHint({ publicId, origin } = {}) {
   if (!publicId) return null
-  const base = origin || process.env.PUBLIC_SITE_ORIGIN || 'https://getvia.in'
+  const base = origin || getPublicSiteOrigin()
   return `${String(base).replace(/\/$/, '')}/profile/${publicId}`
 }

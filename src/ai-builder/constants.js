@@ -289,10 +289,31 @@ export function getStaleAiJobMs() {
 }
 
 export function getPublicSiteOrigin() {
-  return String(process.env.PUBLIC_SITE_ORIGIN || process.env.CLIENT_ORIGINS?.split(',')[0] || 'https://getvia.in')
+  const explicit = String(process.env.PUBLIC_SITE_ORIGIN || '')
     .split(',')[0]
     .trim()
     .replace(/\/$/, '')
+  if (explicit && !/localhost|127\.0\.0\.1/i.test(explicit)) return explicit
+
+  const listed = String(process.env.CLIENT_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim().replace(/\/$/, ''))
+    .filter(Boolean)
+  // Prefer a public HTTPS consumer-site origin (never localhost from a mixed CLIENT_ORIGINS list).
+  const httpsPublic = listed.find((o) => /^https:\/\//i.test(o) && !/localhost|127\.0\.0\.1/i.test(o))
+  if (httpsPublic) {
+    // Prefer getvia.in over admin/business/api hosts when present.
+    const consumer = listed.find(
+      (o) =>
+        /^https:\/\//i.test(o) &&
+        !/localhost|127\.0\.0\.1/i.test(o) &&
+        !/\b(admin|business|server|api)\./i.test(o),
+    )
+    return consumer || httpsPublic
+  }
+  const anyPublic = listed.find((o) => !/localhost|127\.0\.0\.1/i.test(o))
+  if (anyPublic) return anyPublic
+  return 'https://getvia.in'
 }
 
 export { getPublicApiOrigin } from './getvia/publicApi.js'

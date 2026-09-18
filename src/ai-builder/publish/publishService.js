@@ -3,6 +3,23 @@ import { validateAndStore } from '../changeset/applyToDraft.js'
 import { aiError, AiErrorCode } from '../errors.js'
 import { getBusinessProfile } from '../tools/getBusinessProfile.js'
 import { cloneState } from '../state/websiteState.schema.js'
+import { applyBusinessToWebsiteState } from '../workspace/persistIsolatedDraft.js'
+
+function preparePublishedState(draft) {
+  let state = cloneState(draft?.websiteState || {})
+  if (draft?.isolatedSnapshot?.business) {
+    state = applyBusinessToWebsiteState(state, draft.isolatedSnapshot.business)
+  }
+  state.engine = 'ai'
+  state.settings = {
+    ...(state.settings || {}),
+    hasAiDesign: true,
+  }
+  if (!Array.isArray(state.sectionOrder) || !state.sectionOrder.length) {
+    state.sectionOrder = ['hero', 'about', 'services', 'contact', 'footer']
+  }
+  return state
+}
 
 export async function publishDraft({ site, draft, user, idempotencyKey = '', profile: profileArg }) {
   if (idempotencyKey && site.lastPublishedIdempotencyKey === idempotencyKey && site.publishedVersionId) {
@@ -23,6 +40,12 @@ export async function publishDraft({ site, draft, user, idempotencyKey = '', pro
     })
   }
 
+  // Persist isolated design DNA onto websiteState before versioning / going live.
+  const publishedState = preparePublishedState(draft)
+  draft.websiteState = publishedState
+  draft.markModified?.('websiteState')
+  await draft.save?.()
+
   const version = await commitVersion({
     site,
     draft,
@@ -35,8 +58,9 @@ export async function publishDraft({ site, draft, user, idempotencyKey = '', pro
   })
 
   try {
-    site.publishedState = cloneState(draft.websiteState)
+    site.publishedState = publishedState
     site.engine = 'ai'
+    site.renderer = 'AiGeneratedOnePage'
   } catch (err) {
     throw aiError(500, 'Publishing failed. Your live website was not changed.', {
       code: AiErrorCode.PUBLISH_FAILED,

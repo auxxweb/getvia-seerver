@@ -129,6 +129,9 @@ export async function listPublicCategories(req, res, next) {
 export async function discoverBusinesses(req, res, next) {
   try {
     const data = await runDiscoverBusinesses(req.query)
+    if (Array.isArray(data?.items) && data.items.length) {
+      data.items = await attachAiPublishFlags(data.items)
+    }
     res.json(data)
   } catch (e) {
     next(e)
@@ -166,7 +169,7 @@ export async function searchBusinesses(req, res, next) {
       .limit(lim)
       .skip(sk)
       .lean()
-    res.json({ ok: true, items: items.map((b) => serializeListItem(b)) })
+    res.json({ ok: true, items: await attachAiPublishFlags(items) })
   } catch (e) {
     next(e)
   }
@@ -243,7 +246,7 @@ export async function trending(req, res, next) {
       .sort({ isFeatured: -1, isTrending: -1 })
       .limit(12)
       .lean()
-    res.json({ ok: true, items: items.map(serializeListItem) })
+    res.json({ ok: true, items: await attachAiPublishFlags(items) })
   } catch (e) {
     next(e)
   }
@@ -281,11 +284,13 @@ export async function verifiedPartners(req, res, next) {
       items = [...items, ...more]
     }
 
+    const rows = await attachAiPublishFlags(items)
     res.json({
       ok: true,
-      items: items.map((b) => {
-        const row = serializeListItem(b)
-        const tpl = b.themeSettings && typeof b.themeSettings === 'object' ? b.themeSettings.template : null
+      items: rows.map((row, i) => {
+        if (row.aiPublished) return { ...row, template: null }
+        const b = items[i]
+        const tpl = b?.themeSettings && typeof b.themeSettings === 'object' ? b.themeSettings.template : null
         return {
           ...row,
           template: tpl && String(tpl).trim() ? String(tpl).trim() : 'template-one',
@@ -430,12 +435,13 @@ export async function nearbyBusinesses(req, res, next) {
       { $limit: limit },
     ])
 
+    const flagged = await attachAiPublishFlags(items)
     res.json({
       ok: true,
       center: { lat: lat0, lng: lng0 },
       radius,
-      items: items.map((b) => {
-        const row = serializeListItem(b)
+      items: flagged.map((row, i) => {
+        const b = items[i]
         const m = Number(b.distanceMeters)
         const km = Number.isFinite(m) ? m / 1000 : null
         return {
@@ -474,24 +480,21 @@ export async function listBusinessesByPublicIds(req, res, next) {
     const filter = await publicMatch()
     const rows = await Business.find({ publicId: { $in: profileIds }, ...filter }).lean()
     const byPublicId = new Map(rows.map((b) => [b.publicId, b]))
-    const items = profileIds
-      .map((pid) => byPublicId.get(pid))
-      .filter(Boolean)
-      .map((b) => serializeListItem(b))
-    res.json({ ok: true, items })
+    const ordered = profileIds.map((pid) => byPublicId.get(pid)).filter(Boolean)
+    res.json({ ok: true, items: await attachAiPublishFlags(ordered) })
   } catch (e) {
     next(e)
   }
 }
 
-export function serializeListItem(b) {
-  return {
+export function serializeListItem(b, extras = {}) {
+  const row = {
     profileId: b.publicId,
     id: b._id.toString(),
     name: b.name,
     category: b.category,
     subcategory: b.subcategory,
-    logo: b.logo,
+    logo: extras.logo || b.logo,
     address: b.address,
     formattedAddress: b.formattedAddress,
     city: b.city,
@@ -510,6 +513,53 @@ export function serializeListItem(b) {
     phone: b.phone,
     whatsappHref: b.whatsappHref,
   }
+  if (extras.aiPublished) {
+    row.aiPublished = true
+    // Cards must open the AI site, not force a listing template via ?template=
+    row.template = null
+  }
+  return row
+}
+
+/** Attach aiPublished (+ optional hero image) for businesses with a live AI website. */
+export async function attachAiPublishFlags(items) {
+  const list = Array.isArray(items) ? items : []
+  if (!list.length) return list
+  const ids = list.map((b) => b._id || b.id).filter(Boolean)
+  if (!ids.length) return list
+
+  const sites = await Website.find({
+    businessId: { $in: ids },
+    status: 'published',
+    publishedState: { $ne: null },
+  })
+    .select('businessId publishedState')
+    .lean()
+
+  const byBusiness = new Map(sites.map((s) => [String(s.businessId), s.publishedState]))
+
+  return list.map((b) => {
+    const id = String(b._id || b.id || '')
+    const state = byBusiness.get(id)
+    const alreadySerialized = Boolean(b.profileId) && !b.publicId
+    if (!state) {
+      return alreadySerialized ? b : serializeListItem(b)
+    }
+    const hero =
+      state?.content?.landing?.bannerImageUrl ||
+      state?.content?.landing?.bannerImage ||
+      ''
+    const logo = hero && /^https?:\/\//i.test(hero) ? hero : undefined
+    if (alreadySerialized) {
+      return {
+        ...b,
+        aiPublished: true,
+        template: null,
+        logo: logo || b.logo,
+      }
+    }
+    return serializeListItem(b, { aiPublished: true, logo })
+  })
 }
 
 function profileSeo(b, content) {
@@ -557,7 +607,14 @@ async function serializeDetail(b, content, reviews) {
   const site = await Website.findOne({ businessId: b._id, status: 'published' }).select('publishedState engine').lean()
   if (site?.publishedState) {
     detail.aiWebsite = { engine: 'ai', websiteState: site.publishedState }
+    detail.aiPublished = true
+    detail.template = null
     if (site.publishedState.seo) detail.seo = { ...detail.seo, ...site.publishedState.seo }
+    // Canonical live URL is always the public GetVia profile for AI sites.
+    detail.seo = {
+      ...detail.seo,
+      canonical: b.publicId ? `${getPublicSiteOrigin()}${PUBLIC_PROFILE_PATH(b.publicId)}` : detail.seo?.canonical,
+    }
   }
   return detail
 }
