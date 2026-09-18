@@ -41,18 +41,16 @@ export function publicIsolatedPreviewUrl(projectId, { port, localUrl } = {}) {
 
 /**
  * Strip /ai-preview/:id so Vite (base "/") can serve without redirecting.
- * Public browser URL stays /ai-preview/:id/...; Vite sees /...
  */
-export function stripPreviewPrefix(originalUrl, projectId) {
-  const pathOnly = String(originalUrl || '/').split('?')[0] || '/'
+export function stripPreviewPrefix(pathOnly, projectId) {
+  const raw = String(pathOnly || '/').split('?')[0] || '/'
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
-  if (pathOnly === prefix || pathOnly === `${prefix}/`) return '/'
-  if (pathOnly.startsWith(`${prefix}/`)) {
-    const rest = pathOnly.slice(prefix.length)
+  if (raw === prefix || raw === `${prefix}/`) return '/'
+  if (raw.startsWith(`${prefix}/`)) {
+    const rest = raw.slice(prefix.length)
     return rest.startsWith('/') ? rest : `/${rest}`
   }
-  // Express mount remainder (already stripped)
-  return pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`
+  return raw.startsWith('/') ? raw : `/${raw}`
 }
 
 function rewriteLocationHeader(location, { port, projectId, publicOrigin }) {
@@ -61,26 +59,16 @@ function rewriteLocationHeader(location, { port, projectId, publicOrigin }) {
   const prefix = publicPreviewBasePath(projectId)
   const prefixNoSlash = prefix.replace(/\/$/, '')
 
-  // Absolute loopback → path only
   loc = loc.replace(new RegExp(`https?://(?:127\\.0\\.0\\.1|localhost):${port}`, 'i'), '')
-
-  // Absolute public API origin → path only
   if (publicOrigin) {
     loc = loc.replace(new RegExp(`^${publicOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'), '')
   }
 
   if (!loc.startsWith('/')) {
-    // Relative redirect — keep under preview base
     return `${prefixNoSlash}/${loc.replace(/^\.\//, '')}`
   }
-
-  // Already under preview base
   if (loc === prefixNoSlash || loc.startsWith(`${prefixNoSlash}/`)) return loc === prefixNoSlash ? prefix : loc
-
-  // Vite root redirects (/ or /index.html) map to preview root — never bounce back to same URL incorrectly
   if (loc === '/' || loc === '/index.html') return prefix
-
-  // Absolute site paths (/@vite/client, /src/...) must stay under the public preview prefix
   return `${prefixNoSlash}${loc}`
 }
 
@@ -88,15 +76,62 @@ function isHtmlContentType(value) {
   return /text\/html/i.test(String(value || ''))
 }
 
-function rewriteHtmlForPreviewBase(html, projectId) {
+function isRewritableModuleType(value) {
+  const t = String(value || '').toLowerCase()
+  return (
+    t.includes('javascript') ||
+    t.includes('ecmascript') ||
+    t.includes('typescript') ||
+    t.includes('css') ||
+    t.includes('json')
+  )
+}
+
+/** Prefix root-absolute URLs once (never double-prefix). */
+export function prefixRootAbsolutePaths(text, projectId) {
+  const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let out = String(text || '')
+
+  // HTML src/href="/..."
+  out = out.replace(/(src|href)=(["'])(\/[^"']*)\2/gi, (full, attr, quote, path) => {
+    if (path.startsWith('//')) return full
+    if (path === prefix || path.startsWith(`${prefix}/`)) return full
+    return `${attr}=${quote}${prefix}${path}${quote}`
+  })
+
+  // JS/CSS: from "/...", import("/..."), url("/..."), "/@vite/...", "/node_modules/...", "/src/..."
+  out = out.replace(/(["'`])(\/(?:@vite|@id|@fs|@react-refresh|src|node_modules|assets)[^"'`]*)\1/g, (full, quote, path) => {
+    if (path.startsWith(`${prefix}/`) || path === prefix) return full
+    return `${quote}${prefix}${path}${quote}`
+  })
+
+  // Broader: any quoted absolute path that Vite commonly emits
+  out = out.replace(/(from\s+|import\s*\(|export\s+\*\s+from\s+)(["'`])(\/[^"'`]+)\2/g, (full, lead, quote, path) => {
+    if (path.startsWith('//')) return full
+    if (path.startsWith(`${prefix}/`) || path === prefix) return full
+    return `${lead}${quote}${prefix}${path}${quote}`
+  })
+
+  // url(/...) in CSS
+  out = out.replace(/url\(\s*(['"]?)(\/[^)'"]+)\1\s*\)/g, (full, quote, path) => {
+    if (path.startsWith('//')) return full
+    if (path.startsWith(`${prefix}/`) || path === prefix) return full
+    return `url(${quote}${prefix}${path}${quote})`
+  })
+
+  // Remove accidentally double-prefixed bases if a previous buggy rewrite ran
+  out = out.replace(new RegExp(`${escaped}${escaped}`, 'g'), prefix)
+  return out
+}
+
+export function rewriteHtmlForPreviewBase(html, projectId) {
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
   let out = String(html || '')
-  // Ensure relative resolution under the public preview path
-  if (!/<base\s/i.test(out)) {
-    out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}/">`)
-  }
-  // Vite injects absolute root paths — rewrite them under the proxy prefix
-  out = out.replace(/(src|href)=(["'])\/(?!\/)/gi, `$1=$2${prefix}/`)
+  // Drop any existing <base> (including doubled ones from older proxy builds)
+  out = out.replace(/<base\b[^>]*>/gi, '')
+  out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}/">`)
+  out = prefixRootAbsolutePaths(out, projectId)
   return out
 }
 
@@ -124,22 +159,42 @@ function collectBody(stream) {
   })
 }
 
+function frameAncestorHeader() {
+  const extra = String(process.env.CLIENT_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const ancestors = [
+    "'self'",
+    'http://localhost:5175',
+    'http://127.0.0.1:5175',
+    'https://business.getvia.in',
+    'https://admin.getvia.in',
+    ...extra,
+  ]
+  return `frame-ancestors ${[...new Set(ancestors)].join(' ')}`
+}
+
 /**
- * Reverse-proxy isolated Vite previews so remote browsers (and iframes) can load them.
- * Vite always runs with base "/" on loopback; this proxy strips/re-adds /ai-preview/:id
- * so we never hit Vite's subpath redirect loop (ERR_TOO_MANY_REDIRECTS).
+ * Reverse-proxy isolated Vite previews.
+ * Mount at /ai-preview so deep paths (/node_modules/.vite/deps/...) always match.
  */
 export function mountIsolatedPreviewProxy(app) {
-  app.use(`${PREVIEW_PREFIX}/:projectId`, async (req, res) => {
-    const projectId = String(req.params.projectId || '')
+  app.use(PREVIEW_PREFIX, async (req, res, next) => {
+    const pathPart = String(req.path || '/')
+    const match = pathPart.match(/^\/([^/]+)(\/.*)?$/)
+    if (!match) return next()
+
+    const projectId = decodeURIComponent(match[1] || '')
+    if (!projectId || projectId.includes('..')) return next()
+
     const row = getIsolatedPreview(projectId)
     if (!row?.port) {
       res.status(503)
       res.removeHeader('X-Frame-Options')
       res.type('html').set({
         'cache-control': 'no-store',
-        'content-security-policy':
-          "frame-ancestors 'self' https://business.getvia.in https://admin.getvia.in http://localhost:5175 http://127.0.0.1:5175",
+        'content-security-policy': frameAncestorHeader(),
       }).send(
         `<!doctype html><html><body style="font-family:system-ui;padding:2rem">
           <h1>Preview offline</h1>
@@ -152,12 +207,12 @@ export function mountIsolatedPreviewProxy(app) {
     const publicOrigin = String(
       process.env.PUBLIC_API_ORIGIN || process.env.GETVIA_API_ORIGIN || '',
     ).replace(/\/$/, '')
-    const targetPath = stripPreviewPrefix(req.originalUrl, projectId)
+    const fullPath = `${PREVIEW_PREFIX}${pathPart}`
+    const targetPath = stripPreviewPrefix(fullPath, projectId)
     const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''
 
     const headers = { ...req.headers, host: `127.0.0.1:${row.port}` }
     delete headers['content-length']
-    // Avoid compressed HTML we can't rewrite when needed
     headers['accept-encoding'] = 'identity'
 
     const proxyReq = http.request(
@@ -175,35 +230,13 @@ export function mountIsolatedPreviewProxy(app) {
           delete outHeaders['content-security-policy']
           delete outHeaders['content-length']
           delete outHeaders['transfer-encoding']
-
-          const extra = String(process.env.CLIENT_ORIGINS || '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-          const ancestors = [
-            "'self'",
-            'http://localhost:5175',
-            'http://127.0.0.1:5175',
-            'https://business.getvia.in',
-            'https://admin.getvia.in',
-            ...extra,
-          ]
-          outHeaders['content-security-policy'] = `frame-ancestors ${[...new Set(ancestors)].join(' ')}`
+          outHeaders['content-security-policy'] = frameAncestorHeader()
           outHeaders['cache-control'] = outHeaders['cache-control'] || 'no-store'
 
-          // Never leak redirect loops to the browser — rewrite Location once.
           const status = proxyRes.statusCode || 502
           if (status >= 300 && status < 400 && outHeaders.location) {
             const raw = Array.isArray(outHeaders.location) ? outHeaders.location[0] : outHeaders.location
-            const next = rewriteLocationHeader(raw, { port: row.port, projectId, publicOrigin })
-            const self = publicPreviewBasePath(projectId)
-            // Same-URL redirect → serve as 200 by re-fetching target once without Location
-            if (next === self || next === self.replace(/\/$/, '')) {
-              outHeaders.location = self
-            } else {
-              outHeaders.location = next
-            }
-            // Cap redirect chains: convert loopback-style redirects into a single public Location
+            outHeaders.location = rewriteLocationHeader(raw, { port: row.port, projectId, publicOrigin })
             res.writeHead(status, outHeaders)
             proxyRes.resume()
             res.end()
@@ -211,12 +244,18 @@ export function mountIsolatedPreviewProxy(app) {
           }
 
           const contentType = outHeaders['content-type'] || ''
-          if (isHtmlContentType(contentType) && req.method === 'GET') {
+          const shouldRewrite =
+            req.method === 'GET' && (isHtmlContentType(contentType) || isRewritableModuleType(contentType))
+
+          if (shouldRewrite) {
             const raw = await collectBody(proxyRes)
             const decoded = await gunzipMaybe(raw, outHeaders['content-encoding'])
             delete outHeaders['content-encoding']
-            const html = rewriteHtmlForPreviewBase(decoded.toString('utf8'), projectId)
-            const buf = Buffer.from(html, 'utf8')
+            let body = decoded.toString('utf8')
+            body = isHtmlContentType(contentType)
+              ? rewriteHtmlForPreviewBase(body, projectId)
+              : prefixRootAbsolutePaths(body, projectId)
+            const buf = Buffer.from(body, 'utf8')
             outHeaders['content-length'] = String(buf.length)
             res.writeHead(status, outHeaders)
             res.end(buf)
@@ -245,7 +284,7 @@ export function mountIsolatedPreviewProxy(app) {
 
 export { PREVIEW_PREFIX }
 
-/** @deprecated use stripPreviewPrefix — kept for tests that imported the old name */
+/** @deprecated use stripPreviewPrefix */
 export function proxyTargetPath(originalUrl, projectId) {
   return stripPreviewPrefix(originalUrl, projectId)
 }

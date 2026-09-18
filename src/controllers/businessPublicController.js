@@ -604,13 +604,18 @@ async function serializeDetail(b, content, reviews) {
     seo: profileSeo(b, content),
     aiWebsite: null,
   }
-  const site = await Website.findOne({ businessId: b._id, status: 'published' }).select('publishedState engine').lean()
+  const site = await Website.findOne({ businessId: b._id, status: 'published' }).select('publishedState engine renderer').lean()
   if (site?.publishedState) {
-    detail.aiWebsite = { engine: 'ai', websiteState: site.publishedState }
+    const isolatedLiveUrl = site.publishedState?.settings?.isolatedLiveUrl || ''
+    detail.aiWebsite = {
+      engine: 'ai',
+      websiteState: site.publishedState,
+      renderer: site.renderer || 'AiGeneratedOnePage',
+      isolatedLiveUrl: isolatedLiveUrl || null,
+    }
     detail.aiPublished = true
     detail.template = null
     if (site.publishedState.seo) detail.seo = { ...detail.seo, ...site.publishedState.seo }
-    // Canonical live URL is always the public GetVia profile for AI sites.
     detail.seo = {
       ...detail.seo,
       canonical: b.publicId ? `${getPublicSiteOrigin()}${PUBLIC_PROFILE_PATH(b.publicId)}` : detail.seo?.canonical,

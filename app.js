@@ -18,6 +18,7 @@ import { errorHandler } from './src/middleware/errorHandler.js'
 import { configureCloudinary } from './config/cloudinary.js'
 import { LEGACY_UPLOADS_DIR } from './src/services/legacyImageUrls.service.js'
 import { mountIsolatedPreviewProxy } from './src/ai-builder/preview/previewProxy.js'
+import { mountPublishedLiveSites } from './src/ai-builder/publish/mountPublishedLive.js'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -161,6 +162,8 @@ export function createApp() {
 
   // Isolated AI Vite previews (loopback 4100–4199) exposed for remote iframes.
   mountIsolatedPreviewProxy(app)
+  // Published isolated builds for public /profile (same design as AI Builder preview).
+  mountPublishedLiveSites(app)
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: 'Not found' })
