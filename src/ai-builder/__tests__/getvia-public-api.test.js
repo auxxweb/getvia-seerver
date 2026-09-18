@@ -11,7 +11,7 @@ import {
   isForbiddenPublicApiPath,
   publicApiContract,
 } from '../getvia/publicApi.js'
-import { isIsolatedPreviewOrigin, corsAllowsCredentials, isAllowedCorsOrigin } from '../../lib/corsOrigins.js'
+import { isIsolatedPreviewOrigin, corsAllowsCredentials, isAllowedCorsOrigin, getClientOrigins } from '../../lib/corsOrigins.js'
 import { businessJsonFrom, writeViteScaffold } from '../workspace/viteScaffold.js'
 import { analyzeEditScope } from '../mutations/editScope.js'
 import { isAllowedGeneratedPath } from '../workspace/projectFiles.js'
@@ -42,6 +42,22 @@ test('isolated preview CORS is public-only and never credentialed', () => {
   assert.equal(isIsolatedPreviewOrigin('https://evil.example'), false)
   assert.equal(corsAllowsCredentials('http://127.0.0.1:4123'), false)
   assert.equal(isAllowedCorsOrigin('http://127.0.0.1:4123'), true)
+})
+
+test('production always allows live GetVia admin origins for credentialed CORS', () => {
+  const prevEnv = process.env.NODE_ENV
+  const prevOrigins = process.env.CLIENT_ORIGINS
+  process.env.NODE_ENV = 'production'
+  process.env.CLIENT_ORIGINS = 'http://localhost:5175'
+  try {
+    assert.equal(getClientOrigins().includes('https://business.getvia.in'), true)
+    assert.equal(corsAllowsCredentials('https://business.getvia.in'), true)
+    assert.equal(isAllowedCorsOrigin('https://admin.getvia.in'), true)
+  } finally {
+    process.env.NODE_ENV = prevEnv
+    if (prevOrigins == null) delete process.env.CLIENT_ORIGINS
+    else process.env.CLIENT_ORIGINS = prevOrigins
+  }
 })
 
 test('scaffold contact form posts enquiries through the public client', async () => {

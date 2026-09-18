@@ -13,7 +13,7 @@ import userRoutes from './src/routes/userRoutes.js'
 import uploadRoutes from './routes/upload.routes.js'
 import paymentRoutes from './src/routes/paymentRoutes.js'
 import analyticsRoutes from './src/routes/analyticsRoutes.js'
-import { getClientOrigins, isIsolatedPreviewOrigin } from './src/lib/corsOrigins.js'
+import { isIsolatedPreviewOrigin, isAllowedCorsOrigin, applyCorsHeaders } from './src/lib/corsOrigins.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 import { configureCloudinary } from './config/cloudinary.js'
 import { LEGACY_UPLOADS_DIR } from './src/services/legacyImageUrls.service.js'
@@ -51,7 +51,17 @@ export function createApp() {
     res.status(426).set({ Connection: 'close', 'cache-control': 'no-store' }).end()
   })
 
-  const origins = getClientOrigins()
+  const corsCredentials = {
+    origin(origin, callback) {
+      if (!origin) return callback(null, true)
+      if (isAllowedCorsOrigin(origin)) return callback(null, origin)
+      return callback(null, false)
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'Accept'],
+    optionsSuccessStatus: 204,
+  }
 
   app.use((req, res, next) => {
     if (!isIsolatedPreviewOrigin(req.headers.origin)) return next()
@@ -64,10 +74,7 @@ export function createApp() {
   })
   app.use((req, res, next) => {
     if (isIsolatedPreviewOrigin(req.headers.origin)) return next()
-    return cors({
-      origin: origins,
-      credentials: true,
-    })(req, res, next)
+    return cors(corsCredentials)(req, res, next)
   })
   app.use(
     helmet({
@@ -90,11 +97,14 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }))
   app.use(cookieParser())
 
+  const skipOptions = (req) => req.method === 'OPTIONS'
+
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: isProd ? 30 : 200,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipOptions,
     message: { ok: false, error: 'Too many requests. Try again later.' },
   })
   const registerBusinessLimiter = rateLimit({
@@ -102,6 +112,7 @@ export function createApp() {
     max: isProd ? 5 : 50,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipOptions,
     message: { ok: false, error: 'Too many registration attempts. Try again later.' },
   })
 
@@ -114,6 +125,7 @@ export function createApp() {
     max: isProd ? 60 : 300,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipOptions,
   }))
 
   const publicWriteLimiter = rateLimit({
@@ -121,6 +133,7 @@ export function createApp() {
     max: isProd ? 20 : 120,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipOptions,
     message: { ok: false, error: 'Too many submissions. Try again later.' },
   })
   app.use('/api/business/:publicId/enquiries', publicWriteLimiter)
@@ -132,6 +145,7 @@ export function createApp() {
       max: isProd ? 30 : 120,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: skipOptions,
       message: { ok: false, error: 'Too many AI requests. Try again shortly.', code: 'AI_RATE_LIMIT' },
     }),
   )
@@ -142,6 +156,7 @@ export function createApp() {
       max: isProd ? 20 : 80,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: skipOptions,
       message: { ok: false, error: 'Too many publish attempts. Try again shortly.' },
     }),
   )
@@ -173,6 +188,7 @@ export function createApp() {
   mountPublishedLiveSites(app)
 
   app.use((_req, res) => {
+    applyCorsHeaders(_req, res)
     res.status(404).json({ ok: false, error: 'Not found' })
   })
 
