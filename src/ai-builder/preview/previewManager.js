@@ -1,0 +1,237 @@
+import { spawn, execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import net from 'node:net'
+import { assertAllowedCommand } from '../security/commandPolicy.js'
+import { sanitizedWorkspaceEnv } from '../security/workspaceEnv.js'
+import { isHostPreviewAllowed } from '../runtimeFlags.js'
+import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
+
+const execFileAsync = promisify(execFile)
+
+const previews = new Map()
+const PORT_MIN = 4100
+const PORT_MAX = 4199
+
+function isPreviewRuntimeEnabled() {
+  return isHostPreviewAllowed()
+}
+
+function portFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))
+    server.listen(port, '127.0.0.1', () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
+export async function allocatePreviewPort() {
+  const used = new Set([...previews.values()].map((row) => row.port))
+  for (let port = PORT_MIN; port <= PORT_MAX; port += 1) {
+    if (used.has(port)) continue
+    if (await portFree(port)) return port
+  }
+  return null
+}
+
+export function getIsolatedPreview(projectId) {
+  return previews.get(String(projectId || '')) || null
+}
+
+export function previewPortFromUrl(url) {
+  try {
+    const port = Number(new URL(String(url || '')).port)
+    return Number.isInteger(port) && port >= PORT_MIN && port <= PORT_MAX ? port : null
+  } catch {
+    return null
+  }
+}
+
+export async function isPreviewListening(port) {
+  if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) return false
+  return !(await portFree(port))
+}
+
+function killProcessTree(child, signal = 'SIGTERM') {
+  if (!child?.pid) return
+  try {
+    process.kill(-child.pid, signal)
+  } catch {
+    try {
+      child.kill(signal)
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+async function killListenerOnPort(port) {
+  if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) return
+  try {
+    const { stdout } = await execFileAsync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+      timeout: 3000,
+    })
+    const pids = String(stdout || '')
+      .split(/\s+/)
+      .map((value) => Number(value))
+      .filter((pid) => Number.isInteger(pid) && pid > 1)
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGTERM')
+      } catch {
+        /* already gone */
+      }
+    }
+  } catch {
+    /* no listener on this host */
+  }
+}
+
+export async function stopIsolatedPreview(projectId, { port } = {}) {
+  const key = String(projectId || '')
+  const current = previews.get(key)
+  if (current) {
+    killProcessTree(current.child, 'SIGTERM')
+    setTimeout(() => killProcessTree(current.child, 'SIGKILL'), 1500)
+    if (current.port) await killListenerOnPort(current.port)
+    previews.delete(key)
+    return { ok: true, stopped: true, port: current.port }
+  }
+  const orphanPort = Number(port)
+  if (Number.isInteger(orphanPort) && orphanPort >= PORT_MIN && orphanPort <= PORT_MAX) {
+    await killListenerOnPort(orphanPort)
+    return { ok: true, stopped: true, port: orphanPort, orphan: true }
+  }
+  return { ok: true, stopped: false }
+}
+
+function waitForReady(child, timeoutMs = 15_000) {
+  return new Promise((resolve) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const done = (result) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      done({ ok: false, code: 'PREVIEW_TIMEOUT', stdout, stderr, message: 'Preview server did not become ready.' })
+    }, timeoutMs)
+    const consider = () => {
+      if (/Local:|ready in|127\.0\.0\.1:\d+|localhost:\d+/i.test(`${stdout}\n${stderr}`)) {
+        done({ ok: true, stdout, stderr })
+      }
+    }
+    child.stdout.on('data', (c) => {
+      stdout += String(c)
+      consider()
+    })
+    child.stderr.on('data', (c) => {
+      stderr += String(c)
+      consider()
+    })
+    child.on('error', (errObj) => {
+      done({ ok: false, code: 'PREVIEW_CRASH', message: String(errObj.message || errObj), stdout, stderr })
+    })
+    child.on('close', (code) => {
+      done({
+        ok: false,
+        code: 'PREVIEW_EXITED',
+        message: `Preview process exited ${code}.`,
+        stdout,
+        stderr,
+      })
+    })
+  })
+}
+
+export async function startIsolatedPreviewProcess({ projectId, workspaceDir, portFromClient } = {}) {
+  if (portFromClient != null) {
+    return { ok: false, code: 'PREVIEW_PORT_REJECTED', message: 'Clients cannot choose preview ports.' }
+  }
+  if (!projectId) {
+    return { ok: false, code: 'PREVIEW_REJECTED', message: 'projectId is required.' }
+  }
+  if (process.env.NODE_ENV === 'production' && !isPreviewRuntimeEnabled()) {
+    return {
+      ok: false,
+      code: 'PREVIEW_SANDBOX_REQUIRED',
+      message: 'Untrusted generated apps are not started on the API host in production without PREVIEW_ENABLED.',
+    }
+  }
+  if (!isPreviewRuntimeEnabled()) {
+    return {
+      ok: false,
+      code: 'PREVIEW_SANDBOX_REQUIRED',
+      message: 'Set PREVIEW_ENABLED=1 to bind generated Vite apps on 127.0.0.1 with an allocated port.',
+    }
+  }
+  if (!workspaceDir) {
+    return { ok: false, code: 'PREVIEW_REJECTED', message: 'workspaceDir is required to start preview.' }
+  }
+  await repairWorkspaceJsx(workspaceDir)
+  const allowed = assertAllowedCommand('npm run dev')
+  if (!allowed.ok) return allowed
+  await stopIsolatedPreview(projectId)
+  const port = await allocatePreviewPort()
+  if (!port) {
+    return { ok: false, code: 'PREVIEW_NO_PORT', message: 'No free preview port in 4100-4199.' }
+  }
+  const child = spawn(allowed.argv[0], allowed.argv.slice(1), {
+    cwd: workspaceDir,
+    env: {
+      ...sanitizedWorkspaceEnv(),
+      GETVIA_PREVIEW_PORT: String(port),
+      GETVIA_API_ORIGIN: String(process.env.GETVIA_API_ORIGIN || process.env.PUBLIC_API_ORIGIN || `http://127.0.0.1:${process.env.PORT || 5001}`),
+      npm_config_update_notifier: 'false',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  })
+  const url = `http://127.0.0.1:${port}`
+  const ready = await waitForReady(child)
+  if (!ready.ok) {
+    killProcessTree(child, 'SIGKILL')
+    console.warn(`[ai-builder] preview ${ready.code || 'failed'} · ${ready.message || ''}`.trim())
+    return ready
+  }
+  child.on('exit', () => {
+    const current = previews.get(String(projectId))
+    if (current?.child === child) previews.delete(String(projectId))
+  })
+  child.unref()
+  console.log(`[ai-builder] preview ready · ${url}`)
+  const row = { projectId: String(projectId), port, url, child, startedAt: Date.now() }
+  previews.set(String(projectId), row)
+  return { ok: true, port, url, host: '127.0.0.1' }
+}
+
+/**
+ * Reuse a live Vite preview if it is still listening. Start a new one only when
+ * the previous process died (API --watch restart, cancel, crash).
+ */
+export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, preferredPort } = {}) {
+  if (workspaceDir) await repairWorkspaceJsx(workspaceDir)
+  const key = String(projectId || '')
+  const current = previews.get(key)
+  if (current?.port && (await isPreviewListening(current.port))) {
+    return { ok: true, url: current.url, port: current.port, host: '127.0.0.1', reused: true }
+  }
+  if (current) await stopIsolatedPreview(key)
+  const orphanPort = Number(preferredPort)
+  if (Number.isInteger(orphanPort) && (await isPreviewListening(orphanPort))) {
+    const url = `http://127.0.0.1:${orphanPort}`
+    previews.set(key, { projectId: key, port: orphanPort, url, child: null, startedAt: Date.now() })
+    return { ok: true, url, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
+  }
+  return startIsolatedPreviewProcess({ projectId, workspaceDir })
+}
+
+export function getViaPreviewHint({ publicId, origin } = {}) {
+  if (!publicId) return null
+  const base = origin || process.env.PUBLIC_SITE_ORIGIN || 'https://getvia.in'
+  return `${String(base).replace(/\/$/, '')}/profile/${publicId}`
+}

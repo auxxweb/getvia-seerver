@@ -17,6 +17,9 @@ import {
   buildStrictCategoryClauses,
   buildSubcategoryCountMatch,
 } from '../services/categoryBusinessFilter.service.js'
+import { structuredDataTypeForCategory } from '../ai-builder/templates/categoryPatterns.js'
+import { PUBLIC_PROFILE_PATH, getPublicSiteOrigin } from '../ai-builder/constants.js'
+import { Website } from '../models/aiBuilderModels.js'
 
 function parseFiniteNumber(value) {
   const n = typeof value === 'number' ? value : Number(String(value))
@@ -223,7 +226,7 @@ export async function getBusinessById(req, res, next) {
 
     res.json({
       ok: true,
-      business: serializeDetail(b, content, reviews),
+      business: await serializeDetail(b, content, reviews),
     })
   } catch (e) {
     next(e)
@@ -509,8 +512,28 @@ export function serializeListItem(b) {
   }
 }
 
-function serializeDetail(b, content, reviews) {
+function profileSeo(b, content) {
+  const name = String(b.name || '').trim()
+  const category = String(b.category || '').trim()
+  const city = String(b.city || '').trim()
+  const desc = String(b.description || content?.landingSection?.bannerDescription || '').trim().slice(0, 160)
+  const title = [name, category && city ? `${category} in ${city}` : category].filter(Boolean).join(' | ')
+  const canonical = b.publicId ? `${getPublicSiteOrigin()}${PUBLIC_PROFILE_PATH(b.publicId)}` : ''
+  const ogImage = content?.landingSection?.bannerImageUrl || b.logo || ''
   return {
+    title: title || 'GetVia business',
+    description: desc,
+    canonical,
+    robots: 'index,follow',
+    ogTitle: title,
+    ogDescription: desc,
+    ogImage,
+    structuredDataType: structuredDataTypeForCategory(category, b.subcategory),
+  }
+}
+
+async function serializeDetail(b, content, reviews) {
+  const detail = {
     ...serializeListItem(b),
     description: b.description,
     openingHours: b.openingHours,
@@ -528,5 +551,13 @@ function serializeDetail(b, content, reviews) {
       userPhotoURL: r.userId?.photoURL || '',
       createdAt: r.createdAt,
     })),
+    seo: profileSeo(b, content),
+    aiWebsite: null,
   }
+  const site = await Website.findOne({ businessId: b._id, status: 'published' }).select('publishedState engine').lean()
+  if (site?.publishedState) {
+    detail.aiWebsite = { engine: 'ai', websiteState: site.publishedState }
+    if (site.publishedState.seo) detail.seo = { ...detail.seo, ...site.publishedState.seo }
+  }
+  return detail
 }

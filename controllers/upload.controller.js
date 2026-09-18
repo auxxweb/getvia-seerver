@@ -16,17 +16,32 @@ const ADMIN_FOLDERS = new Set([
   'offer-ads',
   'featured-events',
 ])
+const AI_BUILDER_REFERENCE_FOLDER = /^getvia\/ai-builder\/[A-Za-z0-9_-]{1,64}\/reference$/
 
-function allowedFolderForRole(role, folder) {
-  if (role === 'BUSINESS_OWNER') return OWNER_FOLDERS.has(folder)
-  if (role === 'SUPER_ADMIN') return ADMIN_FOLDERS.has(folder) || OWNER_FOLDERS.has(folder)
+export function isAiBuilderReferenceFolder(folder) {
+  return AI_BUILDER_REFERENCE_FOLDER.test(String(folder || '').trim().replace(/^\/+|\/+$/g, ''))
+}
+
+export function allowedFolderForRole(role, folder) {
+  const normalized = String(folder || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!normalized || normalized.includes('..') || normalized.includes('\\')) return false
+  if (isAiBuilderReferenceFolder(normalized)) {
+    return role === 'BUSINESS_OWNER' || role === 'SUPER_ADMIN'
+  }
+  if (normalized.includes('/')) return false
+  if (role === 'BUSINESS_OWNER') return OWNER_FOLDERS.has(normalized)
+  if (role === 'SUPER_ADMIN') return ADMIN_FOLDERS.has(normalized) || OWNER_FOLDERS.has(normalized)
   return false
 }
 
-function folderFromPublicId(publicId) {
+export function folderFromPublicId(publicId) {
   const id = String(publicId || '').trim()
   if (!id || id.includes('..')) return null
-  return id.split('/')[0] || null
+  const parts = id.split('/').filter(Boolean)
+  if (parts.length >= 4 && parts[0] === 'getvia' && parts[1] === 'ai-builder' && parts[3] === 'reference') {
+    return parts.slice(0, 4).join('/')
+  }
+  return parts[0] || null
 }
 
 function assertPublicIdAllowed(role, publicId) {

@@ -1,0 +1,28 @@
+{
+  "name": "LaFemina",
+  "hero": {
+    "title": "Color that lasts",
+    "subtitle": "Salon",
+    "primaryCta": {
+      "label": "Book",
+      "href": "#contact"
+    }
+  },
+  "about": {
+    "title": "About",
+    "body": "A studio in Goa."
+  },
+  "services": [
+    {
+      "name": "Color",
+      "description": "Lived-in color"
+    }
+  ],
+  "sections": [
+    "hero",
+    "about",
+    "services",
+    "contact",
+    "footer"
+  ]
+}

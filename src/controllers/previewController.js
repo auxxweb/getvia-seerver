@@ -4,6 +4,7 @@ import { Review } from '../models/Review.js'
 import { HttpError } from '../middleware/errorHandler.js'
 import { signAccessToken, verifyAccessToken } from '../utils/tokens.js'
 import { getApiOrigin, prepareBusinessMediaForResponse } from '../services/legacyImageUrls.service.js'
+import { Website, WebsiteDraft } from '../models/aiBuilderModels.js'
 
 function jwtSecret() {
   return process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET
@@ -78,6 +79,16 @@ export async function getBusinessPreviewByToken(req, res, next) {
     )
     const biz = media.business || business
     const resolvedContent = media.content
+    let seo = null
+    let aiWebsite = null
+    if (String(req.query.aiDraft || '') === '1' && decoded.typ === 'biz-preview') {
+      const site = await Website.findOne({ businessId: business._id }).select('_id').lean()
+      const draft = site ? await WebsiteDraft.findOne({ siteId: site._id }).lean() : null
+      if (draft?.websiteState) {
+        aiWebsite = { engine: 'ai', websiteState: draft.websiteState }
+        seo = draft.websiteState.seo || null
+      }
+    }
 
     res.json({
       ok: true,
@@ -106,6 +117,8 @@ export async function getBusinessPreviewByToken(req, res, next) {
         onboardingCompletedAt: biz.onboardingCompletedAt,
         content: resolvedContent || null,
         reviews: (reviews || []).map(serializeReview),
+        seo,
+        aiWebsite,
       },
     })
   } catch (e) {

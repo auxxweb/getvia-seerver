@@ -1,0 +1,47 @@
+export const TASK_EVENTS = Object.freeze([
+  'TASK_STARTED',
+  'PROJECT_INSPECTED',
+  'PLAN_CREATED',
+  'FILE_READ',
+  'FILE_CHANGED',
+  'COMMAND_STARTED',
+  'COMMAND_FINISHED',
+  'BUILD_STARTED',
+  'BUILD_FAILED',
+  'BUILD_PASSED',
+  'PREVIEW_STARTED',
+  'BROWSER_STARTED',
+  'BROWSER_TEST_PASSED',
+  'BROWSER_TEST_FAILED',
+  'VISUAL_CHECK_STARTED',
+  'REPAIR_STARTED',
+  'REPAIR_COMPLETED',
+  'TASK_COMPLETED',
+  'TASK_FAILED',
+])
+
+export const TASK_EVENT_SET = new Set(TASK_EVENTS)
+
+export const EVENT_TO_STEP = Object.freeze({
+  TASK_STARTED: 'understanding',
+  PROJECT_INSPECTED: 'planning',
+  PLAN_CREATED: 'planning',
+  FILE_READ: 'implement',
+  FILE_CHANGED: 'implement',
+  COMMAND_STARTED: 'build',
+  COMMAND_FINISHED: 'build',
+  BUILD_STARTED: 'build',
+  BUILD_FAILED: 'build',
+  BUILD_PASSED: 'build',
+  PREVIEW_STARTED: 'preview',
+  BROWSER_STARTED: 'qa',
+  BROWSER_TEST_PASSED: 'qa',
+  BROWSER_TEST_FAILED: 'qa',
+  VISUAL_CHECK_STARTED: 'qa',
+  REPAIR_STARTED: 'implement',
+  REPAIR_COMPLETED: 'implement',
+  TASK_COMPLETED: 'review',
+  TASK_FAILED: 'review',
+})
+
+export const STUCK_STATES = Object.freeze(['IMPLEMENTING', 'BUILDING', 'DEBUGGING', 'REPAIRING'])

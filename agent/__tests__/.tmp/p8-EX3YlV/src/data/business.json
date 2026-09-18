@@ -1,0 +1,17 @@
+{
+  "name": "LaFemina",
+  "hours": "Tue–Sun 10–20",
+  "hero": {
+    "title": "Color that lasts",
+    "primaryCta": {
+      "label": "Book",
+      "href": "#contact"
+    }
+  },
+  "sections": [
+    "hero",
+    "about",
+    "contact",
+    "footer"
+  ]
+}

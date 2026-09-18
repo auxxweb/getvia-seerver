@@ -117,6 +117,11 @@ const server = app.listen(port, () => {
   if (!isProd) {
 
     console.log(`API listening on http://localhost:${port}`)
+    if (process.env.AI_ISOLATED_RUNTIME === '1' || process.env.AI_ISOLATED_RUNTIME === 'true') {
+      console.log(
+        `[ai-builder] isolated React+Vite one-page workspaces → ${process.env.AI_WORKSPACE_ROOT || 'tmpdir'} (preview ${process.env.PREVIEW_ENABLED === '1' ? 'on' : 'off'})`,
+      )
+    }
 
   } else {
 

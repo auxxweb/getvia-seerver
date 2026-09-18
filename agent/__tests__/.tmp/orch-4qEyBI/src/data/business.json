@@ -1,0 +1,11 @@
+{
+  "name": "LaFemina",
+  "hero": {
+    "title": "Color that lasts",
+    "primaryCta": {
+      "label": "Book",
+      "href": "#contact"
+    }
+  },
+  "whatsapp": "https://wa.me/"
+}

@@ -1,0 +1,41 @@
+{
+  "direction": "magazine",
+  "label": "Magazine",
+  "navigationStrategy": "issue-masthead",
+  "heroComposition": "headline-deck-spread",
+  "sectionOrder": [
+    "hero",
+    "reviews",
+    "about",
+    "services",
+    "gallery",
+    "contact",
+    "footer"
+  ],
+  "gridStrategy": "magazine-modules",
+  "typographyHierarchy": {
+    "heading": "Oswald, Impact, sans-serif",
+    "body": "Source Serif 4, Georgia, serif",
+    "scale": "cover-story"
+  },
+  "colorStrategy": {
+    "background": "#ffffff",
+    "surface": "#f2f2f2",
+    "heading": "#111111",
+    "text": "#222222",
+    "accent": "#d62828",
+    "accentText": "#ffffff",
+    "heroBg": "#111111",
+    "heroFg": "#ffffff"
+  },
+  "ctaPlacement": "kicker-row",
+  "cardStrategy": "article-deck",
+  "imageTreatment": "captioned-plate",
+  "interactionStyle": "page-flip",
+  "footerStrategy": "index-columns",
+  "mobileStrategy": "stacked-issue",
+  "layoutStyle": "magazine-spread",
+  "spacing": "tight-modules",
+  "buttons": "box-label",
+  "animation": "cut"
+}

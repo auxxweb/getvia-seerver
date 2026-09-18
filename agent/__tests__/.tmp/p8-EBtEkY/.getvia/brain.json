@@ -1,0 +1,83 @@
+{
+  "projectId": "read1",
+  "userId": "user1",
+  "framework": "unknown",
+  "bundler": "unknown",
+  "packageManager": "npm",
+  "routes": [
+    {
+      "path": "#top",
+      "file": "src/App.jsx",
+      "via": "anchor"
+    }
+  ],
+  "pages": [
+    "Home"
+  ],
+  "components": [
+    {
+      "name": "Nav",
+      "path": "src/App.jsx",
+      "line": 2
+    },
+    {
+      "name": "Hero",
+      "path": "src/App.jsx",
+      "line": 3
+    },
+    {
+      "name": "App",
+      "path": "src/App.jsx",
+      "line": 4
+    }
+  ],
+  "importantFiles": [
+    "src/App.jsx",
+    "src/main.jsx",
+    "src/index.css",
+    "src/data/business.json",
+    "index.html",
+    "package.json"
+  ],
+  "styles": [
+    "src/index.css"
+  ],
+  "assets": [],
+  "dependencies": [],
+  "integrations": [
+    "tailwind"
+  ],
+  "envRefs": [],
+  "apiCalls": [],
+  "knownErrors": [],
+  "recentChanges": [],
+  "buildStatus": "unknown",
+  "previewStatus": "unknown",
+  "designDNA": {
+    "direction": null,
+    "layoutStyle": null,
+    "navigationStyle": null,
+    "heroStyle": null,
+    "typography": null,
+    "colors": null,
+    "colorSystem": null,
+    "cards": null,
+    "cardStyle": null,
+    "buttons": null,
+    "buttonStyle": null,
+    "spacing": null,
+    "sectionRhythm": null,
+    "imageTreatment": null,
+    "interactions": null,
+    "interactionStyle": null,
+    "footer": null,
+    "footerStyle": null,
+    "animation": null,
+    "animationStyle": null,
+    "novelty": null
+  },
+  "homepage": "src/App.jsx",
+  "entry": "src/main.jsx",
+  "indexedAt": "2026-09-17T07:32:42.895Z",
+  "updatedAt": "2026-09-17T07:32:42.896Z"
+}

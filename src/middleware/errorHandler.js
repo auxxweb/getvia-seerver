@@ -24,6 +24,10 @@ export function errorHandler(err, req, res, _next) {
   res.status(status).json({
     ok: false,
     error: message,
+    ...(err.code ? { code: err.code } : {}),
+    ...(typeof err.retryable === 'boolean' ? { retryable: err.retryable } : {}),
+    ...(err.recoveryAction ? { recoveryAction: err.recoveryAction } : {}),
+    ...(err.correlationId ? { correlationId: err.correlationId } : {}),
     ...(err.details && process.env.NODE_ENV !== 'production' ? { details: err.details } : {}),
   })
 }
@@ -33,5 +37,11 @@ export class HttpError extends Error {
     super(message)
     this.status = status
     this.details = details
+    if (details && typeof details === 'object') {
+      if (details.code) this.code = details.code
+      if (typeof details.retryable === 'boolean') this.retryable = details.retryable
+      if (details.recoveryAction) this.recoveryAction = details.recoveryAction
+      if (details.correlationId) this.correlationId = details.correlationId
+    }
   }
 }

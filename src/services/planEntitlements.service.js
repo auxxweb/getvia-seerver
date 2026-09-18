@@ -249,20 +249,46 @@ export async function consumeAiPrompt(businessId) {
     usage.aiPromptsUsed = 0
   }
 
-  if (limit != null && usage.aiPromptsUsed >= limit) {
-    throw new HttpError(
-      403,
-      `Monthly AI prompt limit reached (${limit}). Upgrade your plan or wait until next month.`,
-    )
+  const used = Number(usage.aiPromptsUsed) || 0
+  const left = remaining(used, limit)
+
+  // Hit 0 (or would go below): no more API / AI jobs.
+  if (limit != null && (left <= 0 || used >= limit || used + 1 > limit)) {
+    throw new HttpError(403, 'Tokens are empty. You have no AI credits left on this plan.', {
+      code: 'AI_TOKENS_EMPTY',
+      retryable: false,
+      recoveryAction: 'UPGRADE_PLAN',
+      details: { used, limit, remaining: 0 },
+    })
   }
 
-  usage.aiPromptsUsed += 1
+  usage.aiPromptsUsed = used + 1
   await usage.save()
   return {
     used: usage.aiPromptsUsed,
     limit,
     remaining: remaining(usage.aiPromptsUsed, limit),
   }
+}
+
+/** Read-only check — throws the same empty-tokens error without consuming a credit. */
+export async function assertAiCreditsAvailable(businessId) {
+  const { entitlements } = await resolveBusinessEntitlements(businessId)
+  const limit = entitlements.aiPromptsPerMonth
+  if (limit == null) return { ok: true, remaining: null, limit: null }
+  const usage = await getOrCreateUsage(businessId)
+  const key = monthKey()
+  const used = usage.aiPromptsMonthKey === key ? Number(usage.aiPromptsUsed) || 0 : 0
+  const left = remaining(used, limit)
+  if (left <= 0) {
+    throw new HttpError(403, 'Tokens are empty. You have no AI credits left on this plan.', {
+      code: 'AI_TOKENS_EMPTY',
+      retryable: false,
+      recoveryAction: 'UPGRADE_PLAN',
+      details: { used, limit, remaining: 0 },
+    })
+  }
+  return { ok: true, remaining: left, limit, used }
 }
 
 export async function assertAndConsumeOfferPosts(businessId, previousOfferCount, nextOfferCount) {

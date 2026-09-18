@@ -1,0 +1,68 @@
+:root {
+  --background: #ffffff;
+  --surface: #f2f2f2;
+  --heading: #111111;
+  --text: #222222;
+  --accent: #d62828;
+  --accentText: #ffffff;
+  --heroBg: #111111;
+  --heroFg: #ffffff;
+  --font-heading: Oswald, Impact, sans-serif;
+  --font-body: Source Serif 4, Georgia, serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--background);
+  color: var(--text);
+}
+h1, h2, h3 { font-family: var(--font-heading); color: var(--heading); }
+.site { min-height: 100vh; }
+.look-magazine { --look: 'magazine'; }
+.nav.top-ruled, .nav.hairline-top, .nav.issue-masthead, .nav.pill-header, .nav.tiny-wordmark, .nav.overlay-on-media {
+  display: flex; justify-content: space-between; align-items: center; padding: 1rem 6vw;
+}
+.nav.left-rail { position: sticky; top: 0; width: 220px; float: left; min-height: 100vh; padding: 2rem 1rem; }
+.nav.cell-nav { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.nav.hidden-until-hover { position: fixed; top: 0; left: 0; right: 0; opacity: .15; }
+.nav.hidden-until-hover:hover { opacity: 1; }
+.nav-toggle { display: none; }
+@media (max-width: 768px) {
+  .nav-desktop { display: none; }
+  .nav-toggle { display: block; }
+  .nav.left-rail { float: none; width: auto; min-height: 0; }
+}
+.hero.typographic-column { padding: 18vh 12vw; max-width: 18ch; }
+.hero.full-bleed-photo { min-height: 100vh; display: grid; place-items: end start; padding: 8vh 6vw; background: var(--heroBg); color: var(--heroFg); }
+.hero.centered-void { min-height: 88vh; display: grid; place-items: center; text-align: center; padding: 10vh 8vw; }
+.hero.offset-split { display: grid; grid-template-columns: 1.4fr .8fr; min-height: 80vh; padding: 8vh 4vw; }
+.hero.headline-deck-spread { padding: 4vh 5vw; display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; background: var(--heroBg); color: var(--heroFg); }
+.hero.viewport-stage { min-height: 100vh; display: grid; place-items: center; background: var(--heroBg); color: var(--heroFg); }
+.hero.bento-hero { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; min-height: 70vh; padding: 12px; }
+.hero.soft-split-portrait { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; padding: 10vh 8vw; }
+.hero.one-line-hero { padding: 30vh 8vw 10vh; }
+.hero h1 { font-size: clamp(2.2rem, 7vw, 6rem); line-height: .95; margin: 0 0 1rem; color: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+.cta-band { padding: 4rem 6vw; background: var(--accent); color: var(--accentText); text-align: center; }
+.btn, .btn.primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: .85rem 1.3rem; background: var(--accent); color: var(--accentText); text-decoration: none;
+}
+.look-neo-minimal .btn, .look-editorial .btn { background: transparent; color: inherit; border-bottom: 1px solid currentColor; padding: .4rem 0; }
+.look-immersive .btn { border-radius: 999px; box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 50%, transparent); }
+.look-soft-luxury .btn { border-radius: 999px; }
+.section { padding: 8vh 6vw; }
+.grid.mosaic, .grid.bento-12, .grid.magazine-modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.grid.two-column-wide-margins { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; max-width: 960px; margin: 0 auto; }
+.grid.broken-columns { display: grid; grid-template-columns: 1.2fr .8fr; gap: 2rem; }
+.grid.single-track { display: flex; flex-direction: column; gap: 0; max-width: 40rem; }
+.card.ruled-text-first, .card.article-deck { border-top: 1px solid var(--heading); padding: 1.2rem 0; }
+.card.photo-tile, .card.scene-panels { min-height: 220px; background: var(--surface); }
+.card.rounded-shadow { border-radius: 1.5rem; box-shadow: 0 20px 40px rgba(80,40,20,.08); padding: 1.5rem; background: var(--surface); }
+.card.list-rows { border-bottom: 1px solid #eee; padding: .8rem 0; }
+.card.bento-cells { border: 1px solid #ddd; padding: 1rem; }
+.footer.colophon, .footer.thin-centered, .footer.one-line { padding: 2rem 6vw; text-align: center; }
+.footer.index-columns, .footer.split-asymmetric { display: grid; grid-template-columns: 1fr 1fr; padding: 4rem 6vw; }
+.footer.end-credits, .footer.dark-minimal { padding: 6rem 6vw; background: #000; color: #fff; }

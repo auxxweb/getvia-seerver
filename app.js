@@ -13,7 +13,7 @@ import userRoutes from './src/routes/userRoutes.js'
 import uploadRoutes from './routes/upload.routes.js'
 import paymentRoutes from './src/routes/paymentRoutes.js'
 import analyticsRoutes from './src/routes/analyticsRoutes.js'
-import { getClientOrigins } from './src/lib/corsOrigins.js'
+import { getClientOrigins, isIsolatedPreviewOrigin } from './src/lib/corsOrigins.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 import { configureCloudinary } from './config/cloudinary.js'
 import { LEGACY_UPLOADS_DIR } from './src/services/legacyImageUrls.service.js'
@@ -30,12 +30,22 @@ export function createApp() {
 
   const origins = getClientOrigins()
 
-  app.use(
-    cors({
+  app.use((req, res, next) => {
+    if (!isIsolatedPreviewOrigin(req.headers.origin)) return next()
+    return cors({
+      origin: req.headers.origin,
+      credentials: false,
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Accept'],
+    })(req, res, next)
+  })
+  app.use((req, res, next) => {
+    if (isIsolatedPreviewOrigin(req.headers.origin)) return next()
+    return cors({
       origin: origins,
       credentials: true,
-    }),
-  )
+    })(req, res, next)
+  })
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -82,6 +92,26 @@ export function createApp() {
   })
   app.use('/api/business/:publicId/enquiries', publicWriteLimiter)
   app.use('/api/site/support', publicWriteLimiter)
+  app.use(
+    '/api/owner/ai-builder/message',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: isProd ? 30 : 120,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { ok: false, error: 'Too many AI requests. Try again shortly.', code: 'AI_RATE_LIMIT' },
+    }),
+  )
+  app.use(
+    '/api/owner/websites/:siteId/publish',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: isProd ? 20 : 80,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { ok: false, error: 'Too many publish attempts. Try again shortly.' },
+    }),
+  )
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true })

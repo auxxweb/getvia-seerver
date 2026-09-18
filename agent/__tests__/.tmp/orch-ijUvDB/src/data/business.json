@@ -1,0 +1,10 @@
+{
+  "name": "LaFemina",
+  "hero": {
+    "title": "Gossip Girls",
+    "primaryCta": {
+      "label": "Book",
+      "href": "#contact"
+    }
+  }
+}

@@ -8,11 +8,13 @@ import * as preview from '../controllers/previewController.js'
 import { optionalAuthenticate } from '../middleware/auth.js'
 import * as site from '../controllers/siteContentController.js'
 import * as enquiries from '../controllers/businessEnquiryController.js'
+import * as siteHost from '../controllers/websiteHostController.js'
 
 const r = Router()
 
 r.get('/plans', sub.listActivePlansPublic)
 r.get('/preview/:token', preview.getBusinessPreviewByToken)
+r.get('/site/by-host', siteHost.getSiteByHost)
 r.get('/categories', pub.listPublicCategories)
 r.get('/business/search', pub.searchBusinesses)
 r.get('/business/discover', pub.discoverBusinesses)

@@ -1,0 +1,75 @@
+{
+  "projectId": "site1",
+  "userId": "user1",
+  "framework": "React",
+  "bundler": "Vite",
+  "packageManager": "npm",
+  "routes": [
+    {
+      "path": "#top",
+      "file": "src/App.jsx",
+      "via": "anchor"
+    }
+  ],
+  "pages": [
+    "Home"
+  ],
+  "components": [
+    {
+      "name": "Nav",
+      "path": "src/App.jsx",
+      "line": 3
+    },
+    {
+      "name": "Hero",
+      "path": "src/App.jsx",
+      "line": 11
+    },
+    {
+      "name": "App",
+      "path": "src/App.jsx",
+      "line": 21
+    }
+  ],
+  "importantFiles": [
+    "src/App.jsx",
+    "src/main.jsx",
+    "src/index.css",
+    "src/data/business.json",
+    "package.json"
+  ],
+  "styles": [
+    "src/index.css"
+  ],
+  "assets": [],
+  "dependencies": [
+    "react",
+    "react-dom",
+    "vite"
+  ],
+  "integrations": [],
+  "envRefs": [],
+  "apiCalls": [],
+  "knownErrors": [],
+  "recentChanges": [],
+  "buildStatus": "unknown",
+  "previewStatus": "unknown",
+  "designDNA": {
+    "layoutStyle": null,
+    "navigationStyle": null,
+    "heroStyle": null,
+    "typography": null,
+    "colorSystem": null,
+    "cardStyle": null,
+    "buttonStyle": null,
+    "sectionRhythm": null,
+    "imageTreatment": null,
+    "interactionStyle": null,
+    "footerStyle": null,
+    "animationStyle": null
+  },
+  "homepage": "src/App.jsx",
+  "entry": "src/main.jsx",
+  "indexedAt": "2026-09-17T05:20:20.867Z",
+  "updatedAt": "2026-09-17T05:20:20.867Z"
+}

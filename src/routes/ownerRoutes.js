@@ -9,6 +9,8 @@ import * as analyticsDash from '../controllers/analyticsDashboard.controller.js'
 import * as planUsage from '../controllers/planUsageController.js'
 import * as site from '../controllers/siteContentController.js'
 import * as enquiries from '../controllers/businessEnquiryController.js'
+import aiBuilderRoutes from './aiBuilderRoutes.js'
+import '../models/aiBuilderModels.js'
 
 const r = Router()
 r.use(authenticate(true))
@@ -43,5 +45,7 @@ r.get('/support', site.listOwnerSupportMessages)
 r.post('/support', site.submitOwnerSupportMessage)
 r.get('/business/:id/enquiries', enquiries.listOwnerEnquiries)
 r.patch('/business/:id/enquiries/:enquiryId', enquiries.patchOwnerEnquiry)
+
+r.use(aiBuilderRoutes)
 
 export default r
