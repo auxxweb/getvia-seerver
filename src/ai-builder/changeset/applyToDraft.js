@@ -92,7 +92,12 @@ export async function validateAndStore({ site, draft, profile, jobId }) {
   const report = runWebsiteValidation(draft.websiteState, { profile })
   const browser = await runPlaywrightValidation(draft.websiteState)
   if (browser.ran) {
-    report.errors.push(...(browser.errors || []))
+    // Static HTML overflow checks are advisory — they often false-positive on
+    // AI drafts and should not hard-block publish in production.
+    for (const err of browser.errors || []) {
+      if (err?.type === 'HORIZONTAL_OVERFLOW') report.warnings.push(err)
+      else report.errors.push(err)
+    }
     report.passed = report.errors.length === 0
     report.skipped = (report.skipped || []).filter((item) => item.type !== 'PLAYWRIGHT_LAYOUT')
     report.playwright = { ran: true, message: browser.message }

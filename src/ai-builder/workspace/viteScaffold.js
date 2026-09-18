@@ -38,13 +38,17 @@ import react from '@vitejs/plugin-react'
 
 const port = Number(process.env.GETVIA_PREVIEW_PORT || 5179)
 const apiOrigin = process.env.GETVIA_API_ORIGIN || ${target}
+const previewBase = process.env.GETVIA_PREVIEW_BASE || '/'
 
 export default defineConfig({
+  base: previewBase.endsWith('/') ? previewBase : \`\${previewBase}/\`,
   plugins: [react()],
   server: {
     host: '127.0.0.1',
     port,
     strictPort: true,
+    // HMR is disabled when served through the API reverse proxy in production.
+    hmr: process.env.GETVIA_PREVIEW_HMR === '1' ? { host: '127.0.0.1', port } : false,
     cors: {
       origin: [
         'http://localhost:5175',
@@ -53,6 +57,9 @@ export default defineConfig({
         'http://127.0.0.1:5174',
         'http://localhost:5173',
         'http://127.0.0.1:5173',
+        'https://business.getvia.in',
+        'https://admin.getvia.in',
+        'https://getvia.in',
       ],
     },
     proxy: {
@@ -62,7 +69,6 @@ export default defineConfig({
         rewrite: (p) => p.replace(/^\\/getvia-api/, '/api'),
       },
     },
-    hmr: { host: '127.0.0.1', port },
   },
   preview: { host: '127.0.0.1', port, strictPort: true },
 })
@@ -71,6 +77,13 @@ export default defineConfig({
 
 const VITE_CONFIG = viteConfigSource()
 
+/** Rewrite vite.config.js so existing workspaces pick up preview base / proxy settings. */
+export async function writePreviewViteConfig(workspaceDir, { apiOrigin } = {}) {
+  if (!workspaceDir) return { ok: false }
+  const vitePath = path.join(workspaceDir, 'vite.config.js')
+  await fs.writeFile(vitePath, viteConfigSource(apiOrigin || getPublicApiOrigin()), 'utf8')
+  return { ok: true, written: ['vite.config.js'] }
+}
 const INDEX_HTML = `<!doctype html>
 <html lang="en">
   <head>
@@ -83,7 +96,7 @@ const INDEX_HTML = `<!doctype html>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="./src/main.jsx"></script>
     <!-- getvia:js-libs -->
   </body>
 </html>

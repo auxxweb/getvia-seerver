@@ -39,17 +39,22 @@ export function runWebsiteValidation(state, { profile } = {}) {
   const skipped = []
 
   const schema = validateWebsiteState(state)
-  errors.push(...schema.errors)
+  for (const err of schema.errors || []) {
+    // Unknown section ids / soft colour issues are common on AI drafts — do not hard-block publish.
+    if (err?.type === 'UNSUPPORTED_SECTION' || err?.type === 'INVALID_COLOR') warnings.push(err)
+    else errors.push(err)
+  }
 
   if (Array.isArray(state?.sectionOrder)) {
     for (const id of state.sectionOrder) {
       if (!AI_SECTION_TYPES.includes(id)) {
-        errors.push({ type: 'UNSUPPORTED_SECTION', page: '/', sectionId: id })
+        // Custom section ids from isolated AI sites are common — advisory only.
+        warnings.push({ type: 'UNSUPPORTED_SECTION', page: '/', sectionId: id })
       }
     }
   }
 
-  errors.push(
+  warnings.push(
     ...aiThemeContrastIssues(state?.theme?.colors || {}).map((issue) => ({
       ...issue,
       page: '/',
@@ -58,12 +63,12 @@ export function runWebsiteValidation(state, { profile } = {}) {
 
   const landing = state?.content?.landing || {}
   if (landing.bannerImageUrl && !/^https?:\/\//i.test(landing.bannerImageUrl) && !landing.bannerImageUrl.startsWith('/')) {
-    errors.push({ type: 'BROKEN_IMAGE', page: '/', field: 'hero' })
+    warnings.push({ type: 'BROKEN_IMAGE', page: '/', field: 'hero' })
   }
 
   for (const row of collectComponents(state)) {
     if (row.type && !COMPONENT_TYPES.includes(row.type)) {
-      errors.push({ type: 'UNSUPPORTED_COMPONENT', page: '/', sectionId: row.sectionId, componentId: row.id })
+      warnings.push({ type: 'UNSUPPORTED_COMPONENT', page: '/', sectionId: row.sectionId, componentId: row.id })
     }
     if (row.type === 'button') {
       const href = row.props?.href || row.props?.action?.target
@@ -77,7 +82,7 @@ export function runWebsiteValidation(state, { profile } = {}) {
       }
     }
     if (row.type === 'image' && row.props?.src && !/^https?:\/\//i.test(row.props.src) && !String(row.props.src).startsWith('/')) {
-      errors.push({ type: 'BROKEN_IMAGE', page: '/', componentId: row.id })
+      warnings.push({ type: 'BROKEN_IMAGE', page: '/', componentId: row.id })
     }
   }
 

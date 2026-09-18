@@ -17,16 +17,31 @@ import { getClientOrigins, isIsolatedPreviewOrigin } from './src/lib/corsOrigins
 import { errorHandler } from './src/middleware/errorHandler.js'
 import { configureCloudinary } from './config/cloudinary.js'
 import { LEGACY_UPLOADS_DIR } from './src/services/legacyImageUrls.service.js'
+import { mountIsolatedPreviewProxy } from './src/ai-builder/preview/previewProxy.js'
 
 const isProd = process.env.NODE_ENV === 'production'
+
+function configureTrustProxy(app) {
+  // Behind nginx / Cloudflare / PM2 proxy, rate-limit needs real client IPs.
+  // Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+  // TRUST_PROXY=1 (recommended) | TRUST_PROXY=false to disable | omit to auto-detect.
+  const raw = process.env.TRUST_PROXY
+  if (raw === '0' || raw === 'false') return
+  if (raw == null || raw === '') {
+    const apiOrigin = String(process.env.PUBLIC_API_ORIGIN || process.env.GETVIA_API_ORIGIN || '')
+    const behindPublicProxy = Boolean(apiOrigin && !/127\.0\.0\.1|localhost/i.test(apiOrigin))
+    if (isProd || behindPublicProxy) app.set('trust proxy', 1)
+    return
+  }
+  const asNum = Number(raw)
+  app.set('trust proxy', Number.isFinite(asNum) && String(asNum) === String(raw).trim() ? asNum : raw)
+}
 
 export function createApp() {
   configureCloudinary()
   const app = express()
 
-  if (isProd) {
-    app.set('trust proxy', 1)
-  }
+  configureTrustProxy(app)
 
   const origins = getClientOrigins()
 
@@ -133,6 +148,9 @@ export function createApp() {
       maxAge: isProd ? '1d' : '7d',
     }),
   )
+
+  // Isolated AI Vite previews (loopback 4100–4199) exposed for remote iframes.
+  mountIsolatedPreviewProxy(app)
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: 'Not found' })

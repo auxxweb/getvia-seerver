@@ -28,7 +28,8 @@ export function errorHandler(err, req, res, _next) {
     ...(typeof err.retryable === 'boolean' ? { retryable: err.retryable } : {}),
     ...(err.recoveryAction ? { recoveryAction: err.recoveryAction } : {}),
     ...(err.correlationId ? { correlationId: err.correlationId } : {}),
-    ...(err.details && process.env.NODE_ENV !== 'production' ? { details: err.details } : {}),
+    // Always return client-facing validation details (4xx). Hide only on 5xx in production.
+    ...(err.details && (status < 500 || process.env.NODE_ENV !== 'production') ? { details: err.details } : {}),
   })
 }
 

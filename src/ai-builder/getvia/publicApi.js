@@ -99,8 +99,14 @@ export function getviaApiBase() {
   if (typeof window !== 'undefined') {
     const host = window.location.hostname
     const port = Number(window.location.port)
+    const path = String(window.location.pathname || '')
+    // Local Vite on 4100–4199 uses the Vite proxy → API.
     if ((host === '127.0.0.1' || host === 'localhost') && port >= 4100 && port <= 4199) {
       return '/getvia-api'
+    }
+    // Production iframe via /ai-preview/:id/ — prefer absolute GetVia API origin.
+    if (path.includes('/ai-preview/') && configured && /^https?:\\/\\//i.test(configured)) {
+      return configured
     }
   }
   return configured || '/getvia-api'

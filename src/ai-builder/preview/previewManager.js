@@ -5,6 +5,8 @@ import { assertAllowedCommand } from '../security/commandPolicy.js'
 import { sanitizedWorkspaceEnv } from '../security/workspaceEnv.js'
 import { isHostPreviewAllowed } from '../runtimeFlags.js'
 import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
+import { writePreviewViteConfig } from '../workspace/viteScaffold.js'
+import { publicIsolatedPreviewUrl, publicPreviewBasePath, shouldUsePublicPreviewProxy } from './previewProxy.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -180,18 +182,31 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
   if (!port) {
     return { ok: false, code: 'PREVIEW_NO_PORT', message: 'No free preview port in 4100-4199.' }
   }
+
+  const apiOrigin = String(
+    process.env.GETVIA_API_ORIGIN ||
+      process.env.PUBLIC_API_ORIGIN ||
+      `http://127.0.0.1:${process.env.PORT || 5001}`,
+  ).replace(/\/$/, '')
+  const usePublicProxy = shouldUsePublicPreviewProxy()
+  const previewBase = usePublicProxy ? publicPreviewBasePath(projectId) : '/'
+  await writePreviewViteConfig(workspaceDir, { apiOrigin }).catch(() => null)
+
   const child = spawn(allowed.argv[0], allowed.argv.slice(1), {
     cwd: workspaceDir,
     env: {
       ...sanitizedWorkspaceEnv(),
       GETVIA_PREVIEW_PORT: String(port),
-      GETVIA_API_ORIGIN: String(process.env.GETVIA_API_ORIGIN || process.env.PUBLIC_API_ORIGIN || `http://127.0.0.1:${process.env.PORT || 5001}`),
+      GETVIA_PREVIEW_BASE: previewBase,
+      GETVIA_PREVIEW_HMR: usePublicProxy ? '0' : '1',
+      GETVIA_API_ORIGIN: apiOrigin,
       npm_config_update_notifier: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   })
-  const url = `http://127.0.0.1:${port}`
+  const localUrl = `http://127.0.0.1:${port}/`
+  const url = publicIsolatedPreviewUrl(projectId, { port, localUrl }) || localUrl
   const ready = await waitForReady(child)
   if (!ready.ok) {
     killProcessTree(child, 'SIGKILL')
@@ -203,10 +218,10 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
     if (current?.child === child) previews.delete(String(projectId))
   })
   child.unref()
-  console.log(`[ai-builder] preview ready · ${url}`)
-  const row = { projectId: String(projectId), port, url, child, startedAt: Date.now() }
+  console.log(`[ai-builder] preview ready · ${url} (local ${localUrl})`)
+  const row = { projectId: String(projectId), port, url, localUrl, child, startedAt: Date.now() }
   previews.set(String(projectId), row)
-  return { ok: true, port, url, host: '127.0.0.1' }
+  return { ok: true, port, url, localUrl, host: usePublicProxy ? 'proxy' : '127.0.0.1' }
 }
 
 /**
@@ -218,13 +233,18 @@ export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, pr
   const key = String(projectId || '')
   const current = previews.get(key)
   if (current?.port && (await isPreviewListening(current.port))) {
-    return { ok: true, url: current.url, port: current.port, host: '127.0.0.1', reused: true }
+    const url =
+      publicIsolatedPreviewUrl(key, { port: current.port, localUrl: current.localUrl || current.url }) ||
+      current.url
+    current.url = url
+    return { ok: true, url, port: current.port, host: current.host || '127.0.0.1', reused: true }
   }
   if (current) await stopIsolatedPreview(key)
   const orphanPort = Number(preferredPort)
   if (Number.isInteger(orphanPort) && (await isPreviewListening(orphanPort))) {
-    const url = `http://127.0.0.1:${orphanPort}`
-    previews.set(key, { projectId: key, port: orphanPort, url, child: null, startedAt: Date.now() })
+    const localUrl = `http://127.0.0.1:${orphanPort}/`
+    const url = publicIsolatedPreviewUrl(key, { port: orphanPort, localUrl }) || localUrl
+    previews.set(key, { projectId: key, port: orphanPort, url, localUrl, child: null, startedAt: Date.now() })
     return { ok: true, url, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
   }
   return startIsolatedPreviewProcess({ projectId, workspaceDir })
