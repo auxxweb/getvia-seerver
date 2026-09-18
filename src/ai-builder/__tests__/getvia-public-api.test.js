@@ -78,6 +78,21 @@ test('scaffold contact form posts enquiries through the public client', async ()
   assert.equal(GETVIA_PUBLIC_CLIENT_JS.includes('credentials: \'omit\''), true)
 })
 
+test('preview proxy rewrites assets and disables Vite HMR websockets', async () => {
+  const { rewriteHtmlForPreviewBase, disableViteHmrClient, stripPreviewPrefix } = await import('../preview/previewProxy.js')
+  const id = '6aad68fbf20d26ab1da6c441'
+  const html = rewriteHtmlForPreviewBase(
+    '<!doctype html><html><head></head><body><script type="module" src="/@vite/client"></script></body></html>',
+    id,
+  )
+  assert.match(html, /data-getvia-hmr-guard/)
+  assert.match(html, /src="\/ai-preview\/6aad68fbf20d26ab1da6c441\/@vite\/client"/)
+  assert.doesNotMatch(html, /\/ai-preview\/.*\/ai-preview\//)
+  const js = disableViteHmrClient('const ws = new WebSocket(socketUrl); // hmrClient')
+  assert.doesNotMatch(js, /new WebSocket\(/)
+  assert.equal(stripPreviewPrefix(`/ai-preview/${id}/@vite/client`, id), '/@vite/client')
+})
+
 test('enquiry prompts stay on the contact form and public client', () => {
   const scope = analyzeEditScope({
     prompt:

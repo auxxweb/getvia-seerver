@@ -44,6 +44,13 @@ export function createApp() {
 
   configureTrustProxy(app)
 
+  // Vite HMR from isolated previews hits wss://server.getvia.in/?token=… — never a real API socket.
+  app.use((req, res, next) => {
+    if (String(req.headers.upgrade || '').toLowerCase() !== 'websocket') return next()
+    if (String(req.originalUrl || req.url || '').startsWith('/ai-preview')) return next()
+    res.status(426).set({ Connection: 'close', 'cache-control': 'no-store' }).end()
+  })
+
   const origins = getClientOrigins()
 
   app.use((req, res, next) => {

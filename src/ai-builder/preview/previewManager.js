@@ -1,11 +1,14 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import net from 'node:net'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { assertAllowedCommand } from '../security/commandPolicy.js'
 import { sanitizedWorkspaceEnv } from '../security/workspaceEnv.js'
 import { isHostPreviewAllowed } from '../runtimeFlags.js'
 import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
 import { writePreviewViteConfig } from '../workspace/viteScaffold.js'
+import { inspectWorkspaceBuild } from '../validation/isolatedBuild.js'
 import { publicIsolatedPreviewUrl, shouldUsePublicPreviewProxy } from './previewProxy.js'
 import { getPublicSiteOrigin } from '../constants.js'
 
@@ -176,7 +179,25 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
     return { ok: false, code: 'PREVIEW_REJECTED', message: 'workspaceDir is required to start preview.' }
   }
   await repairWorkspaceJsx(workspaceDir)
-  const allowed = assertAllowedCommand('npm run dev')
+  const usePublicProxy = shouldUsePublicPreviewProxy()
+  let command = 'npm run dev'
+  if (usePublicProxy) {
+    // Static `vite preview` has no HMR websocket (the live-host failure mode).
+    const distIndex = path.join(workspaceDir, 'dist', 'index.html')
+    let hasDist = false
+    try {
+      await fs.access(distIndex)
+      hasDist = true
+    } catch {
+      hasDist = false
+    }
+    if (!hasDist) {
+      const built = await inspectWorkspaceBuild({ workspaceDir, runBuild: true })
+      hasDist = Boolean(built?.ok)
+    }
+    if (hasDist) command = 'npm run preview'
+  }
+  const allowed = assertAllowedCommand(command)
   if (!allowed.ok) return allowed
   await stopIsolatedPreview(projectId)
   const port = await allocatePreviewPort()
@@ -189,9 +210,6 @@ export async function startIsolatedPreviewProcess({ projectId, workspaceDir, por
       process.env.PUBLIC_API_ORIGIN ||
       `http://127.0.0.1:${process.env.PORT || 5001}`,
   ).replace(/\/$/, '')
-  const usePublicProxy = shouldUsePublicPreviewProxy()
-  // Always base "/" behind the public proxy — the proxy strips /ai-preview/:id.
-  // Subpath base caused ERR_TOO_MANY_REDIRECTS with Vite.
   const previewBase = '/'
   await writePreviewViteConfig(workspaceDir, { apiOrigin }).catch(() => null)
 

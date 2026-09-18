@@ -39,6 +39,7 @@ import react from '@vitejs/plugin-react'
 const port = Number(process.env.GETVIA_PREVIEW_PORT || 5179)
 const apiOrigin = process.env.GETVIA_API_ORIGIN || ${target}
 const previewBase = process.env.GETVIA_PREVIEW_BASE || '/'
+const enableHmr = process.env.GETVIA_PREVIEW_HMR === '1'
 
 export default defineConfig({
   base: previewBase.endsWith('/') ? previewBase : \`\${previewBase}/\`,
@@ -47,8 +48,8 @@ export default defineConfig({
     host: '127.0.0.1',
     port,
     strictPort: true,
-    // HMR is disabled when served through the API reverse proxy in production.
-    hmr: process.env.GETVIA_PREVIEW_HMR === '1' ? { host: '127.0.0.1', port } : false,
+    // Production iframe is HTTP-proxied; Vite HMR websockets cannot reach 127.0.0.1:4100 from the browser.
+    hmr: enableHmr ? { host: '127.0.0.1', port, protocol: 'ws', clientPort: port } : false,
     cors: {
       origin: [
         'http://localhost:5175',

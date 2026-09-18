@@ -122,15 +122,51 @@ export function prefixRootAbsolutePaths(text, projectId) {
 
   // Remove accidentally double-prefixed bases if a previous buggy rewrite ran
   out = out.replace(new RegExp(`${escaped}${escaped}`, 'g'), prefix)
+  return disableViteHmrClient(out)
+}
+
+/** Vite's /@vite/client still tries wss://host/?token= even behind our HTTP proxy. Neutralize it. */
+export function disableViteHmrClient(text) {
+  let out = String(text || '')
+  if (!/@vite\/client|failed to connect to websocket|hmrClient|import\.meta\.hot/i.test(out)) return out
+  out = out.replace(
+    /new WebSocket\(([^)]*)\)/g,
+    '({readyState:3,url:"",close:function(){},send:function(){},addEventListener:function(){},removeEventListener:function(){}})',
+  )
   return out
 }
+
+const HMR_GUARD_SCRIPT = `<script data-getvia-hmr-guard>
+(function(){
+  var Native = window.WebSocket;
+  if (!Native) return;
+  window.WebSocket = function(url, protocols) {
+    var href = String(url || '');
+    if (/[?&]token=/.test(href) || /:410\\d\\b/.test(href)) {
+      return {
+        readyState: 3,
+        url: href,
+        close: function(){},
+        send: function(){},
+        addEventListener: function(){},
+        removeEventListener: function(){},
+      };
+    }
+    return protocols != null ? new Native(url, protocols) : new Native(url);
+  };
+  window.WebSocket.CONNECTING = 0;
+  window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2;
+  window.WebSocket.CLOSED = 3;
+})();
+</script>`
 
 export function rewriteHtmlForPreviewBase(html, projectId) {
   const prefix = publicPreviewBasePath(projectId).replace(/\/$/, '')
   let out = String(html || '')
-  // Drop any existing <base> (including doubled ones from older proxy builds)
   out = out.replace(/<base\b[^>]*>/gi, '')
-  out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}/">`)
+  out = out.replace(/<script data-getvia-hmr-guard>[\s\S]*?<\/script>/gi, '')
+  out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${prefix}/">${HMR_GUARD_SCRIPT}`)
   out = prefixRootAbsolutePaths(out, projectId)
   return out
 }
@@ -201,6 +237,15 @@ export function mountIsolatedPreviewProxy(app) {
           <p>This AI website preview is not running. Open AI Builder and start or rebuild the preview.</p>
         </body></html>`,
       )
+      return
+    }
+
+    // Vite HMR websocket is not supported through this HTTP proxy. Do not 500.
+    if (String(req.headers.upgrade || '').toLowerCase() === 'websocket') {
+      res.status(426).set({
+        'cache-control': 'no-store',
+        Connection: 'close',
+      }).end()
       return
     }
 
