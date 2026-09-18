@@ -43,8 +43,14 @@ export function validateEnv() {
     }
 
     const analyticsSalt = process.env.ANALYTICS_IP_SALT?.trim()
-    if (!analyticsSalt || analyticsSalt.length < 16) {
+    const analyticsFallback =
+      process.env.JWT_ACCESS_SECRET?.trim() || process.env.JWT_SECRET?.trim() || ''
+    if ((!analyticsSalt || analyticsSalt.length < 16) && analyticsFallback.length < 16) {
       errors.push('ANALYTICS_IP_SALT is required in production (≥16 chars, random)')
+    } else if (!analyticsSalt || analyticsSalt.length < 16) {
+      console.warn(
+        '[env] ANALYTICS_IP_SALT missing — hashing visitor IPs with JWT secret. Set ANALYTICS_IP_SALT in .env.',
+      )
     }
 
     if (jwtSecret === 'change-me-min-32-characters-long-secret!!') {
