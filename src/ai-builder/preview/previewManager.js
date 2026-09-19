@@ -293,7 +293,15 @@ export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, pr
       publicIsolatedPreviewUrl(key, { port: current.port, localUrl: current.localUrl || current.url }) ||
       current.url
     current.url = url
-    return { ok: true, url, port: current.port, host: current.host || '127.0.0.1', reused: true }
+    const localUrl = current.localUrl || `http://127.0.0.1:${current.port}/`
+    return {
+      ok: true,
+      url,
+      localUrl,
+      port: current.port,
+      host: current.host || '127.0.0.1',
+      reused: true,
+    }
   }
   if (current) await stopIsolatedPreview(key)
   if (!forceRestart) {
@@ -302,7 +310,7 @@ export async function ensureIsolatedPreviewProcess({ projectId, workspaceDir, pr
       const localUrl = `http://127.0.0.1:${orphanPort}/`
       const url = publicIsolatedPreviewUrl(key, { port: orphanPort, localUrl }) || localUrl
       previews.set(key, { projectId: key, port: orphanPort, url, localUrl, child: null, startedAt: Date.now() })
-      return { ok: true, url, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
+      return { ok: true, url, localUrl, port: orphanPort, host: '127.0.0.1', reused: true, orphan: true }
     }
   } else if (preferredPort) {
     await killListenerOnPort(Number(preferredPort)).catch(() => null)
@@ -314,4 +322,21 @@ export function getViaPreviewHint({ publicId, origin } = {}) {
   if (!publicId) return null
   const base = origin || getPublicSiteOrigin()
   return `${String(base).replace(/\/$/, '')}/profile/${publicId}`
+}
+
+/**
+ * Playwright runs on the API host — use loopback Vite (127.0.0.1:4100) instead of the
+ * public /ai-preview proxy so QA does not depend on nginx TLS or path rewriting.
+ */
+export function serverSidePreviewUrl(preview, projectId) {
+  if (!preview?.ok) return null
+  const local =
+    preview.localUrl ||
+    (Number.isInteger(preview.port) ? `http://127.0.0.1:${preview.port}/` : null)
+  if (local) return local.endsWith('/') ? local : `${local}/`
+  const row = projectId ? getIsolatedPreview(String(projectId)) : null
+  if (row?.localUrl) return row.localUrl.endsWith('/') ? row.localUrl : `${row.localUrl}/`
+  if (row?.port) return `http://127.0.0.1:${row.port}/`
+  const publicUrl = preview.url || row?.url
+  return publicUrl ? (publicUrl.endsWith('/') ? publicUrl : `${publicUrl}/`) : null
 }

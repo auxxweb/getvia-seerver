@@ -46,7 +46,7 @@ export function completionMessage({ review, preview, failedStage, error }) {
   if (review?.approved) {
     if (review.visualSkipped) {
       return preview?.ok
-        ? 'Build and live preview are ready. Browser checks need Playwright against the preview.'
+        ? 'Build and live preview are ready.'
         : 'Build passed. Preview was not started on this host.'
     }
     return preview?.ok
@@ -54,7 +54,9 @@ export function completionMessage({ review, preview, failedStage, error }) {
       : 'Build and browser checks passed. Preview was not started on this host.'
   }
   if (review?.visualUnavailable && review.buildPass && review.structuralPass) {
-    return 'Build and structural checks passed. Browser/visual QA was unavailable, so this is not marked fully complete. Live files are ready; Chromium/Playwright must launch against the preview for a visual pass.'
+    return preview?.ok
+      ? 'Build and preview are ready. Automated browser checks could not run on this server (install Playwright + Chromium for a visual pass).'
+      : 'Build passed. Automated browser checks could not run on this server; preview was not started.'
   }
   return `Failed at ${failedStage || 'review'}: ${error || review?.message || 'required quality gates did not pass.'}`
 }

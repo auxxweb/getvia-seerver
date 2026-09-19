@@ -4,7 +4,12 @@ import { executeCoding } from './codingExecutor.js'
 import { inspectProject } from './contextEngine.js'
 import { ensureWorkspace } from '../workspace/workspaceManager.js'
 import { workspaceHasSite } from '../workspace/viteScaffold.js'
-import { ensureIsolatedPreviewProcess, getIsolatedPreview, getViaPreviewHint } from '../preview/previewManager.js'
+import {
+  ensureIsolatedPreviewProcess,
+  getIsolatedPreview,
+  getViaPreviewHint,
+  serverSidePreviewUrl,
+} from '../preview/previewManager.js'
 import { envFlag, isIsolatedRuntimeEnabled } from '../runtimeFlags.js'
 import { repairWorkspaceJsx } from '../workspace/fixJsxRuntime.js'
 import { listProviderStatus, activeProviderName } from '../providers/aiProvider.js'
@@ -448,7 +453,7 @@ export async function runV2WebsiteJob({
   const runQa = async () => {
     await bump('BROWSER_TESTING', 'qa', 86, 'BROWSER_TEST_STARTED', 'Opening preview in the browser')
     browser = await browserQa({
-      previewUrl: preview.ok ? preview.url : null,
+      previewUrl: serverSidePreviewUrl(preview, siteId),
       workspaceDir,
       fast: true,
       captureScreenshots: requireVisual(),

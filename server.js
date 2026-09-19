@@ -16,6 +16,8 @@ import { startAnalyticsCronJobs } from './src/jobs/analyticsCron.js'
 
 import { isFirebaseAdminConfigured } from './config/firebase.js'
 
+import { logPlaywrightReadiness } from './src/ai-builder/validation/playwrightStartup.js'
+
 
 
 validateEnv()
@@ -128,6 +130,10 @@ const server = app.listen(port, () => {
     console.log(`[getvia-api] listening on port ${port}`)
 
   }
+
+  logPlaywrightReadiness().catch((err) => {
+    console.warn(`[ai-builder] visual QA readiness check failed: ${String(err?.message || err)}`)
+  })
 
   if (!isProd) {
 

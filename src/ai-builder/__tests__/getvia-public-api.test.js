@@ -94,6 +94,22 @@ test('scaffold contact form posts enquiries through the public client', async ()
   assert.equal(GETVIA_PUBLIC_CLIENT_JS.includes('credentials: \'omit\''), true)
 })
 
+test('server-side visual QA prefers loopback preview over public proxy URL', async () => {
+  const { serverSidePreviewUrl } = await import('../preview/previewManager.js')
+  const id = '6aad68fbf20d26ab1da6c441'
+  assert.equal(
+    serverSidePreviewUrl(
+      { ok: true, url: `https://server.getvia.in/ai-preview/${id}/`, port: 4103, localUrl: 'http://127.0.0.1:4103/' },
+      id,
+    ),
+    'http://127.0.0.1:4103/',
+  )
+  assert.equal(
+    serverSidePreviewUrl({ ok: true, url: `https://server.getvia.in/ai-preview/${id}/`, port: 4103 }, id),
+    'http://127.0.0.1:4103/',
+  )
+})
+
 test('preview proxy rewrites assets and disables Vite HMR websockets', async () => {
   const {
     rewriteHtmlForPreviewBase,

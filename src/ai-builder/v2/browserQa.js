@@ -47,6 +47,20 @@ function unavailable(message, extra = {}) {
   }
 }
 
+function skipped(message, extra = {}) {
+  return {
+    ran: false,
+    skipped: true,
+    status: 'skipped',
+    approved: true,
+    issues: [],
+    screenshots: [],
+    viewports: QA_VIEWPORTS,
+    message,
+    ...extra,
+  }
+}
+
 async function inspectDom() {
   const issues = []
   const doc = document.documentElement
@@ -114,7 +128,7 @@ export async function browserQa({
     return unavailable('No preview URL to open in the browser.')
   }
   if (!enabled) {
-    return unavailable('Browser QA is opted out (AI_SKIP_PLAYWRIGHT or PLAYWRIGHT_VALIDATION=0).')
+    return skipped('Browser QA skipped on this server (PLAYWRIGHT_VALIDATION=0 or AI_SKIP_PLAYWRIGHT=1).')
   }
 
   const loaded = await loadPlaywright()

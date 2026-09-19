@@ -85,7 +85,7 @@ test('review never approves when visual QA is unavailable', () => {
   assert.equal(review.visualUnavailable, true)
   const message = completionMessage({ review, preview: { ok: false, skipped: true } })
   assert.equal(/successfully/i.test(message), false)
-  assert.match(message, /unavailable/i)
+  assert.match(message, /browser checks could not run/i)
 })
 
 test('planner maps salon + pricing without writing application code', () => {
